@@ -1,53 +1,56 @@
-﻿// import axios from 'axios';
+// Real API client. Vite proxies /api -> http://localhost:8080 (see vite.config.js).
+// Backend responses are adapted to the shapes the components already expect.
 
-// const api = axios.create({
-//   baseURL: '/api',
-//   headers: { 'Content-Type': 'application/json' }
-// });
+const request = async (url, options) => {
+    const res = await fetch(url, options);
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+};
 
+// Backend Report { id, latitude, longitude, type, description, upvotes, active }
+const toObstacle = (r) => ({ ...r, lat: r.latitude, lng: r.longitude });
+
+/** GET /api/geocode?q=... -> [{ lat, lon, display_name }] */
 export const geocodeQuery = async (query) => {
-    console.log(`[MOCK] Searching for: ${query}`);
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            // Mock result: Piata Unirii, Timisoara
-            resolve([{ lat: 45.7537, lon: 21.2257, display_name: "Piața Unirii" }]);
-        }, 500);
-    });
+    const r = await request(`/api/geocode?q=${encodeURIComponent(query)}`);
+    if (!r || !r.coordinate) return [];
+    return [{ lat: r.coordinate.lat, lon: r.coordinate.lng, display_name: r.displayName }];
 };
 
+/** GET /api/v1/route -> { coordinates: [[lat, lng]], distanceMeters, timeSeconds } */
 export const getRoute = async (startCoords, endCoords, profile) => {
-    console.log(`[MOCK] Calculating ${profile} route from`, startCoords, `to`, endCoords);
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            // Mock Polyline path connecting start, a middle waypoint, and end
-            resolve({
-                coordinates: [
-                    [startCoords.lat, startCoords.lng],
-                    [45.7513, 21.2245], // Waypoint near Piata Victoriei
-                    [endCoords.lat, endCoords.lng]
-                ]
-            });
-        }, 600);
+    const params = new URLSearchParams({
+        startLat: startCoords.lat,
+        startLng: startCoords.lng,
+        endLat: endCoords.lat,
+        endLng: endCoords.lng,
+        profile,
     });
+    const r = await request(`/api/v1/route?${params}`);
+    return {
+        coordinates: (r.path || []).map((p) => [p.lat, p.lng]),
+        distanceMeters: r.distanceMeters,
+        timeSeconds: r.timeSeconds,
+    };
 };
 
+/** GET /api/reports */
 export const getReports = async () => {
-    console.log(`[MOCK] Fetching obstacles`);
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            resolve([
-                { id: 1, lat: 45.7495, lng: 21.2260, type: "BROKEN_ELEVATOR" },
-                { id: 2, lat: 45.7510, lng: 21.2230, type: "BLOCKED_SIDEWALK" }
-            ]);
-        }, 400);
-    });
+    const reports = await request('/api/reports');
+    return (reports || []).map(toObstacle);
 };
 
-export const submitReport = async (lat, lng, type) => {
-    console.log(`[MOCK] Submitting report: ${type} at ${lat}, ${lng}`);
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            resolve({ id: Date.now(), lat, lng, type });
-        }, 500);
+/** POST /api/reports */
+export const submitReport = async (lat, lng, type, description = '') => {
+    const saved = await request('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latitude: lat, longitude: lng, type, description }),
     });
+    return toObstacle(saved);
 };
+
+/** POST /api/reports/{id}/upvote */
+export const upvoteReport = (id) =>
+    request(`/api/reports/${id}/upvote`, { method: 'POST' });

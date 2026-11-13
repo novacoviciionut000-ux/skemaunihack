@@ -30,6 +30,10 @@ public class Report {
     public int getUpvotes() { return upvotes; }
     public boolean isActive() { return active; }
 
+    public void setLatitude(double latitude) { this.latitude = latitude; }
+    public void setLongitude(double longitude) { this.longitude = longitude; }
+    public void setType(ReportType type) { this.type = type; }
+    public void setDescription(String description) { this.description = description; }
     public void setUpvotes(int upvotes) { this.upvotes = upvotes; }
     public void setActive(boolean active) { this.active = active; }
 }

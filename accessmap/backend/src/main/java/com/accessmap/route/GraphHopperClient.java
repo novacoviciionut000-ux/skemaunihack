@@ -1,5 +1,6 @@
 package com.accessmap.route;
 
+import com.accessmap.common.Coordinate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -26,6 +27,7 @@ public class GraphHopperClient {
                 .queryParam("point", startLat + "," + startLon)
                 .queryParam("point", endLat + "," + endLon)
                 .queryParam("profile", profile)
+                .queryParam("points_encoded", "false")
                 // necesar pentru block_area (modul flexibil, fără CH)
                 .queryParam("ch.disable", "true");
 
@@ -49,7 +51,16 @@ public class GraphHopperClient {
                     double time = ((Number) bestPath.get("time")).doubleValue() / 1000.0; // ms -> s
 
                     // Pentru MVP lăsăm punctele goale până adăugăm decodarea poliliniei
-                    return new RouteResponse(Collections.emptyList(), distance, time);
+                    List<Coordinate> path = Collections.emptyList();
+                    Map<String, Object> points = (Map<String, Object>) bestPath.get("points");
+                    if (points != null && points.get("coordinates") instanceof List<?> coords) {
+                        // GeoJSON: [lon, lat]
+                        path = coords.stream()
+                                .map(c -> (List<Number>) c)
+                                .map(c -> new Coordinate(c.get(1).doubleValue(), c.get(0).doubleValue()))
+                                .collect(Collectors.toList());
+                    }
+                    return new RouteResponse(path, distance, time);
                 }
             }
         } catch (Exception e) {

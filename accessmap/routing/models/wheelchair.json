@@ -1,0 +1,10 @@
+{
+  "priority": [
+    { "if": "road_class == STEPS", "multiply_by": "0" },
+    { "if": "surface == COBBLESTONE || surface == GRAVEL || surface == SAND || surface == DIRT || surface == GROUND || surface == GRASS || surface == UNPAVED", "multiply_by": "0.1" },
+    { "if": "smoothness == BAD || smoothness == VERY_BAD || smoothness == HORRIBLE || smoothness == VERY_HORRIBLE || smoothness == IMPASSABLE", "multiply_by": "0.2" },
+    { "if": "surface == PAVING_STONES || surface == FINE_GRAVEL || surface == COMPACTED", "multiply_by": "0.6" },
+    { "if": "road_class == PRIMARY || road_class == TRUNK", "multiply_by": "0.5" }
+  ],
+  "distance_influence": 30
+}

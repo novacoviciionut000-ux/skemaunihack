@@ -26,6 +26,25 @@ public class RouteController {
         this.blockedAreaProvider = blockedAreaProvider;
     }
 
+    /** GET /api/v1/route?startLat=..&startLng=..&endLat=..&endLng=..&profile=wheelchair */
+    @GetMapping("/route")
+    public ResponseEntity<?> getRoute(
+            @RequestParam double startLat,
+            @RequestParam double startLng,
+            @RequestParam double endLat,
+            @RequestParam double endLng,
+            @RequestParam(defaultValue = "wheelchair") String profile) {
+        try {
+            RouteResponse route = graphHopperClient.fetchRoute(
+                    startLat, startLng, endLat, endLng, profile,
+                    blockedAreaProvider.getBlockedAreas());
+            return ResponseEntity.ok(route);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body("Eroare la calcularea rutei: " + e.getMessage());
+        }
+    }
+
     @GetMapping("/route-by-address")
     public ResponseEntity<?> getRouteByAddress(
             @RequestParam String startAddress,
