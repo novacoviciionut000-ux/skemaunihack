@@ -5,11 +5,8 @@ import RouteInfo from './components/RouteInfo';
 import UserNav from './components/UserNav';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
-<<<<<<< HEAD
 import VoiceButton from './components/VoiceButton';
-=======
 import CameraObstacleDetector from './components/CameraObstacleDetector';
->>>>>>> eaa8c832cf59c82eac2443a3b5cac3482e40011c
 import { useAuth } from './context/AuthContext';
 import { getRoute, getReports } from './api/client';
 import {
@@ -316,7 +313,6 @@ export default function App() {
         />
       )}
 
-<<<<<<< HEAD
       {/* Butonul de comandă vocală (poziționat dreapta-jos ca să nu blocheze harta sau Sidebar-ul) */}
       <div style={{
         position: 'absolute',
@@ -328,9 +324,11 @@ export default function App() {
         <VoiceButton
           onDestinationSet={handleVoiceDestination}
           onEmergency={() => setEmergencyActive(true)}
+          onCameraOpen={() => setCameraOpen(true)}
+          onCameraClose={() => setCameraOpen(false)}
         />
       </div>
-=======
+
       {/* Camera Obstacle Detector overlay */}
       <CameraObstacleDetector
         isOpen={cameraOpen}
@@ -342,7 +340,6 @@ export default function App() {
           setSavedDetours(updated);
         }}
       />
->>>>>>> eaa8c832cf59c82eac2443a3b5cac3482e40011c
 
       {/* Sidebar panel */}
       <Sidebar
