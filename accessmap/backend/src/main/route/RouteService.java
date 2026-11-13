@@ -1,7 +1,6 @@
 package com.accessmap.route;
 
 import org.springframework.stereotype.Service;
-
 @Service
 public class RouteService {
 
@@ -15,7 +14,7 @@ public class RouteService {
 
     public RouteResponse calculateRoute(double startLat, double startLon, double endLat, double endLon, String profile) {
         // 1. Luăm obstacolele
-        var blockedAreas = blockedAreaProvider.getActiveBlockedAreas();
+        var blockedAreas = blockedAreaProvider.getBlockedAreas();
 
         System.out.println("Cerem rută de la GraphHopper pt profil: " + profile);
 

@@ -1,10 +1,9 @@
 package com.accessmap.route;
 
-import com.accessmap.common.Coordinate; // Asigurați-vă că aveți clasa Coordinate cu lat și lon
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
+import com.accessmap.common.Coordinate;
 import java.util.List;
 
 @Data
