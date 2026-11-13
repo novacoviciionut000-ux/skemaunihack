@@ -137,13 +137,13 @@ export default function ReportMarker({ report }) {
               {report.description}
             </div>
           )}
-<<<<<<< HEAD
+
           {report.authorName && (
             <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>
               Raportat de: <strong style={{ color: '#1f2937' }}>{report.authorName}</strong>
             </div>
           )}
-=======
+
 
           {/* Coordinates info */}
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 10 }}>

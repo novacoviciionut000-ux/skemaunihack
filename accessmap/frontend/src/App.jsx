@@ -5,6 +5,7 @@ import RouteInfo from './components/RouteInfo';
 import UserNav from './components/UserNav';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
+import CameraObstacleDetector from './components/CameraObstacleDetector';
 import { useAuth } from './context/AuthContext';
 import { getRoute, getReports } from './api/client';
 
@@ -24,6 +25,7 @@ export default function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState('login'); // 'login' | 'register'
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   // Sincronizează profilul de deplasare când utilizatorul se autentifică
   useEffect(() => {
@@ -183,6 +185,12 @@ export default function App() {
         />
       )}
 
+      {/* Camera Obstacle Detector overlay */}
+      <CameraObstacleDetector
+        isOpen={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+      />
+
       {/* Sidebar panel */}
       <Sidebar
         profile={profile}
@@ -202,6 +210,8 @@ export default function App() {
           setUserLocation(coords);
           setCenterTarget({ lat: coords.lat, lng: coords.lng, zoom: 16 });
         }}
+        cameraOpen={cameraOpen}
+        onToggleCamera={() => setCameraOpen((prev) => !prev)}
       />
 
       {/* Auth Modal (Login / Register / Social OAuth) */}

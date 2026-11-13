@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import ProfilePicker from './ProfilePicker';
 import ReportButton from './ReportButton';
 import LocationInput from './LocationInput';
-import { MapPin, Flag, RotateCcw, ChevronUp, ChevronDown } from 'lucide-react';
+import { MapPin, Flag, RotateCcw, ChevronUp, ChevronDown, Camera } from 'lucide-react';
 
 export default function Sidebar({
   profile,
@@ -16,6 +16,8 @@ export default function Sidebar({
   setPlacingMode,
   userLocation,
   onRequestLocate,
+  cameraOpen,
+  onToggleCamera,
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -104,12 +106,36 @@ export default function Sidebar({
           </div>
 
           {/* Action buttons */}
-          <div style={{ marginTop: 14, display: 'flex', gap: 10 }}>
+          <div style={{ marginTop: 14, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <ReportButton
               onReportAdded={onReportAdded}
               userLocation={userLocation}
               onRequestLocate={onRequestLocate}
             />
+            <button
+              type="button"
+              onClick={onToggleCamera}
+              aria-pressed={cameraOpen}
+              style={{
+                padding: '12px 18px',
+                background: cameraOpen ? '#1d4ed8' : '#eff6ff',
+                color: cameraOpen ? '#ffffff' : '#1d4ed8',
+                borderRadius: 12,
+                border: '2px solid #2563eb',
+                fontSize: 14,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
+                boxShadow: cameraOpen ? '0 4px 14px rgba(37, 99, 235, 0.35)' : 'none',
+              }}
+            >
+              <Camera size={18} />
+              {cameraOpen ? 'Închide Camera' : 'Cameră Obstacole'}
+            </button>
             {(start || destination) && (
               <button
                 onClick={onClearRoute}
