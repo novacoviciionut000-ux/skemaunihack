@@ -1,6 +1,6 @@
 supabase:
   url: "https://prysdmeydggkisznbgc.supabase.co"
-  key: "COPIAZA_PUBLISHABLE_KEY_DE_PE_ECRAN" # cea care începe cu sb_publishable_...
+  key: "***REMOVED***" # cea care începe cu sb_publishable_...
 
 spring:
   datasource:
