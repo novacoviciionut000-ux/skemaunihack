@@ -1,0 +1,34 @@
+services:
+  # 1. Baza de date PostGIS (Versiunea 16)
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: accessmap_db
+    environment:
+      POSTGRES_USER: accessmap
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: accessmap
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # 2. Motorul de rutare GraphHopper
+  graphhopper:
+    image: eclipse-temurin:17-jdk
+    container_name: accessmap_routing
+    ports:
+      - "8989:8989"
+    volumes:
+      - ./data:/data
+    working_dir: /data
+    command: >
+      sh -c "apt-get update && apt-get install -y wget &&
+      if [ ! -f graphhopper.jar ]; then wget -O graphhopper.jar https://repo1.maven.org/maven2/com/graphhopper/graphhopper-web/8.0/graphhopper-web-8.0.jar; fi &&
+      if [ ! -f romania.osm.pbf ]; then wget -O romania.osm.pbf https://download.geofabrik.de/europe/romania-latest.osm.pbf; fi &&
+      if [ ! -f config.yml ]; then wget -O config.yml https://raw.githubusercontent.com/graphhopper/graphhopper/8.0/config-example.yml; fi &&
+      java -Ddw.graphhopper.datareader.file=romania.osm.pbf -Ddw.graphhopper.graph.location=graph-cache -jar graphhopper.jar server config.yml"
+
+
+volumes:
+  pgdata:

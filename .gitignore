@@ -1,0 +1,4 @@
+accessmap/data/graph-cache/
+accessmap/data/logs/
+accessmap/data/*.pbf
+accessmap/data/*.jar
