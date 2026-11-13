@@ -15,6 +15,7 @@ import {
   Send,
 } from 'lucide-react';
 import { submitReport } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 
 const OBSTACLE_TYPES = [
   { id: 'BLOCKED_SIDEWALK', label: 'Trotuar blocat / barieră', icon: Ban, color: '#dc2626' },
@@ -26,6 +27,7 @@ const OBSTACLE_TYPES = [
 ];
 
 export default function ReportButton({ onReportAdded, userLocation, onRequestLocate }) {
+  const { user } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [selectedType, setSelectedType] = useState('BLOCKED_SIDEWALK');
   const [description, setDescription] = useState('');
@@ -87,7 +89,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
       const lat = detectedCoords?.lat || (userLocation?.lat) || 45.7489;
       const lng = detectedCoords?.lng || (userLocation?.lng) || 21.2087;
 
-      const report = await submitReport(lat, lng, selectedType, description);
+      const report = await submitReport(lat, lng, selectedType, description, user);
 
       if (onReportAdded) {
         onReportAdded({
@@ -96,6 +98,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
           lng,
           type: selectedType,
           description: description || 'Obstacol raportat',
+          authorName: user ? (user.fullName || user.username) : null,
         });
       }
 
@@ -217,7 +220,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
             }}
           >
             {/* Modal Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#dc2626' }}>
                 <AlertTriangle size={22} />
                 <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#111827' }}>
@@ -243,6 +246,24 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                 <X size={18} />
               </button>
             </div>
+
+            {user && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                backgroundColor: '#eff6ff',
+                border: '1px solid #dbeafe',
+                borderRadius: 10,
+                fontSize: 12,
+                color: '#1d4ed8',
+                marginBottom: 12,
+                fontWeight: 500
+              }}>
+                <span>👤 Raportezi ca: <strong>{user.fullName || user.username}</strong></span>
+              </div>
+            )}
 
             {/* GPS Location Status Bar */}
             <div style={{

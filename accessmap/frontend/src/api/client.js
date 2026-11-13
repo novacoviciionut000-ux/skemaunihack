@@ -2,15 +2,235 @@
 // Connects to Spring Boot backend via Vite proxy (/api), with graceful fallbacks
 // so the UI remains interactive even while GraphHopper or the backend is warming up.
 
-const request = async (url, options) => {
-    const res = await fetch(url, options);
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-    const text = await res.text();
-    return text ? JSON.parse(text) : null;
+const TOKEN_KEY = 'accessmap_jwt_token';
+const USER_KEY = 'accessmap_user_data';
+
+export const getStoredToken = () => {
+    try {
+        return localStorage.getItem(TOKEN_KEY) || null;
+    } catch {
+        return null;
+    }
 };
 
-// Backend Report { id, latitude, longitude, type, description, upvotes, active }
-const toObstacle = (r) => ({ ...r, lat: r.latitude ?? r.lat, lng: r.longitude ?? r.lng });
+export const setStoredAuth = (token, user) => {
+    try {
+        if (token) localStorage.setItem(TOKEN_KEY, token);
+        if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+    } catch (e) {
+        console.warn('Could not save auth in localStorage:', e);
+    }
+};
+
+export const getStoredUser = () => {
+    try {
+        const u = localStorage.getItem(USER_KEY);
+        return u ? JSON.parse(u) : null;
+    } catch {
+        return null;
+    }
+};
+
+export const clearStoredAuth = () => {
+    try {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+    } catch (e) {
+        console.warn('Could not clear auth in localStorage:', e);
+    }
+};
+
+const request = async (url, options = {}) => {
+    const token = getStoredToken();
+    const headers = {
+        'Accept': 'application/json',
+        ...(options.headers || {}),
+    };
+
+    if (token && !headers['Authorization']) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(url, { ...options, headers });
+    const text = await res.text();
+    let data = null;
+    try {
+        data = text ? JSON.parse(text) : null;
+    } catch {
+        data = text;
+    }
+
+    if (!res.ok) {
+        const message = (data && typeof data === 'object' && (data.error || data.message))
+            ? (data.error || data.message)
+            : (typeof data === 'string' && data.length < 200 ? data : `Eroare HTTP ${res.status}`);
+        const err = new Error(message);
+        err.status = res.status;
+        err.data = data;
+        throw err;
+    }
+
+    return data;
+};
+
+// ==================== AUTHENTICATION API ====================
+
+/**
+ * POST /api/auth/login
+ * @param {{ usernameOrEmail: string, password: string }} credentials
+ */
+export const authLogin = async ({ usernameOrEmail, password }) => {
+    try {
+        const res = await request('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usernameOrEmail, password }),
+        });
+        if (res && res.token) {
+            setStoredAuth(res.token, res);
+        }
+        return res;
+    } catch (err) {
+        // Dacă backend-ul nu este pornit încă (ex. offline dev mode), oferim cont demo de rezervă
+        if (err.message && err.message.includes('Failed to fetch')) {
+            console.warn('Backend unavailable, using simulated local authentication for dev preview');
+            if (usernameOrEmail === 'demo' || usernameOrEmail === 'demo@accessmap.ro') {
+                const mock = {
+                    token: 'mock_jwt_token_demo_user',
+                    id: 999,
+                    username: 'utilizator_demo',
+                    email: 'demo@accessmap.ro',
+                    fullName: 'Utilizator Demo',
+                    role: 'ROLE_USER',
+                    provider: 'LOCAL',
+                    preferredProfile: 'wheelchair',
+                    message: 'Autentificare demonstrativă offline reușită!',
+                };
+                setStoredAuth(mock.token, mock);
+                return mock;
+            }
+        }
+        throw err;
+    }
+};
+
+/**
+ * POST /api/auth/register
+ * @param {{ username: string, email: string, password: string, fullName?: string, preferredProfile?: string }} data
+ */
+export const authRegister = async (data) => {
+    try {
+        const res = await request('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        if (res && res.token) {
+            setStoredAuth(res.token, res);
+        }
+        return res;
+    } catch (err) {
+        if (err.message && err.message.includes('Failed to fetch')) {
+            console.warn('Backend unavailable, using simulated registration for dev preview');
+            const mock = {
+                token: 'mock_jwt_token_new_user',
+                id: Date.now(),
+                username: data.username,
+                email: data.email,
+                fullName: data.fullName || data.username,
+                role: 'ROLE_USER',
+                provider: 'LOCAL',
+                preferredProfile: data.preferredProfile || 'wheelchair',
+                message: 'Cont demonstrativ creat offline!',
+            };
+            setStoredAuth(mock.token, mock);
+            return mock;
+        }
+        throw err;
+    }
+};
+
+/**
+ * POST /api/auth/oauth
+ * @param {'google' | 'facebook'} provider
+ * @param {{ token?: string, email: string, name?: string, providerId?: string, avatarUrl?: string }} payload
+ */
+export const authOAuth = async (provider, payload) => {
+    try {
+        const res = await request('/api/auth/oauth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider, ...payload }),
+        });
+        if (res && res.token) {
+            setStoredAuth(res.token, res);
+        }
+        return res;
+    } catch (err) {
+        if (err.message && err.message.includes('Failed to fetch')) {
+            console.warn('Backend unavailable, using simulated OAuth response for dev preview');
+            const mock = {
+                token: `mock_jwt_${provider}_token`,
+                id: Date.now(),
+                username: payload.name ? payload.name.toLowerCase().replace(/\s+/g, '_') : 'social_user',
+                email: payload.email || `${provider}_user@accessmap.ro`,
+                fullName: payload.name || `Utilizator ${provider.toUpperCase()}`,
+                avatarUrl: payload.avatarUrl || null,
+                role: 'ROLE_USER',
+                provider: provider.toUpperCase(),
+                preferredProfile: 'wheelchair',
+                message: `Autentificare demonstrativă ${provider.toUpperCase()} reușită!`,
+            };
+            setStoredAuth(mock.token, mock);
+            return mock;
+        }
+        throw err;
+    }
+};
+
+/**
+ * GET /api/auth/me
+ */
+export const authGetMe = async () => {
+    try {
+        const user = await request('/api/auth/me');
+        if (user) {
+            setStoredAuth(getStoredToken(), user);
+        }
+        return user;
+    } catch (err) {
+        if (err.status === 401) {
+            clearStoredAuth();
+        }
+        throw err;
+    }
+};
+
+/**
+ * PUT /api/auth/profile
+ */
+export const authUpdateProfile = async (profileData) => {
+    const updated = await request('/api/auth/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profileData),
+    });
+    if (updated) {
+        const current = getStoredUser() || {};
+        setStoredAuth(getStoredToken(), { ...current, ...updated });
+    }
+    return updated;
+};
+
+// ==================== ROUTING & REPORTS API ====================
+
+// Backend Report { id, latitude, longitude, type, description, upvotes, active, authorId, authorName }
+const toObstacle = (r) => ({
+    ...r,
+    lat: r.latitude ?? r.lat,
+    lng: r.longitude ?? r.lng,
+    authorName: r.authorName || (r.author_name ? r.author_name : null),
+});
 
 /** Haversine distance in meters */
 const getDistance = (c1, c2) => {
@@ -114,8 +334,6 @@ export const getRoute = async (startCoords, endCoords, profile = 'wheelchair') =
     }
 
     // 2. Ruterul real de pietoni OpenStreetMap (OSRM Foot Router)
-    // Acesta urmează STRICT trotuarele, aleile pietonale, trecerile de pietoni și străzile reale.
-    // Nu o ia NICIODATĂ prin clădiri sau proprietăți private!
     const osrmEndpoints = [
         `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${startCoords.lng},${startCoords.lat};${endCoords.lng},${endCoords.lat}?overview=full&geometries=geojson`,
         `https://router.project-osrm.org/route/v1/foot/${startCoords.lng},${startCoords.lat};${endCoords.lng},${endCoords.lat}?overview=full&geometries=geojson`,
@@ -128,7 +346,6 @@ export const getRoute = async (startCoords, endCoords, profile = 'wheelchair') =
                 const data = await res.json();
                 if (data && data.routes && data.routes.length > 0) {
                     const route = data.routes[0];
-                    // OSRM returnează coordonate GeoJSON [lng, lat] -> le convertim în [lat, lng] pentru Leaflet
                     const coords = (route.geometry?.coordinates || []).map((c) => [c[1], c[0]]);
                     if (coords.length > 1) {
                         const speedFactor = profile === 'wheelchair' ? 1.1 : profile === 'limited_mobility' ? 1.25 : 1.0;
@@ -160,9 +377,9 @@ export const getRoute = async (startCoords, endCoords, profile = 'wheelchair') =
 };
 
 const DEFAULT_REPORTS = [
-    { id: 101, lat: 45.7550, lng: 21.2290, type: 'BLOCKED_SIDEWALK', description: 'Construction works on sidewalk' },
-    { id: 102, lat: 45.7512, lng: 21.2240, type: 'STAIRS_NO_RAMP', description: 'Underpass stairs without ramp' },
-    { id: 103, lat: 45.7455, lng: 21.2180, type: 'BROKEN_ELEVATOR', description: 'Elevator out of service' },
+    { id: 101, lat: 45.7550, lng: 21.2290, type: 'BLOCKED_SIDEWALK', description: 'Lucrări pe trotuar, acces impracticabil', authorName: 'Andrei Popa' },
+    { id: 102, lat: 45.7512, lng: 21.2240, type: 'STAIRS_NO_RAMP', description: 'Trepte fără rampă la pasajul pietonal', authorName: 'Elena Ionescu' },
+    { id: 103, lat: 45.7455, lng: 21.2180, type: 'BROKEN_ELEVATOR', description: 'Lift exterior defect', authorName: 'Marius D.' },
 ];
 
 /** GET /api/reports */
@@ -179,18 +396,33 @@ export const getReports = async () => {
 };
 
 /** POST /api/reports */
-export const submitReport = async (lat, lng, type, description = '') => {
+export const submitReport = async (lat, lng, type, description = '', author = null) => {
+    const payload = {
+        latitude: lat,
+        longitude: lng,
+        type,
+        description,
+        ...(author ? { authorId: author.id, authorName: author.fullName || author.username } : {}),
+    };
+
     try {
         const saved = await request('/api/reports', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ latitude: lat, longitude: lng, type, description }),
+            body: JSON.stringify(payload),
         });
         if (saved) return toObstacle(saved);
     } catch (err) {
         console.warn('Could not save to backend DB, saving locally:', err);
     }
-    return toObstacle({ id: Date.now(), latitude: lat, longitude: lng, type, description });
+    return toObstacle({
+        id: Date.now(),
+        latitude: lat,
+        longitude: lng,
+        type,
+        description,
+        authorName: author ? (author.fullName || author.username) : 'Anonim',
+    });
 };
 
 /** POST /api/reports/{id}/upvote */

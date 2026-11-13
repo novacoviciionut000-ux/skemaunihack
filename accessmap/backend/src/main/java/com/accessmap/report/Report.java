@@ -20,6 +20,12 @@ public class Report {
     private int upvotes = 1;
     private boolean active = true;
 
+    @Column(name = "author_id")
+    private Long authorId;
+
+    @Column(name = "author_name", length = 100)
+    private String authorName;
+
     public Report() {}
 
     public Long getId() { return id; }
@@ -29,6 +35,8 @@ public class Report {
     public String getDescription() { return description; }
     public int getUpvotes() { return upvotes; }
     public boolean isActive() { return active; }
+    public Long getAuthorId() { return authorId; }
+    public String getAuthorName() { return authorName; }
 
     public void setLatitude(double latitude) { this.latitude = latitude; }
     public void setLongitude(double longitude) { this.longitude = longitude; }
@@ -36,4 +44,6 @@ public class Report {
     public void setDescription(String description) { this.description = description; }
     public void setUpvotes(int upvotes) { this.upvotes = upvotes; }
     public void setActive(boolean active) { this.active = active; }
+    public void setAuthorId(Long authorId) { this.authorId = authorId; }
+    public void setAuthorName(String authorName) { this.authorName = authorName; }
 }

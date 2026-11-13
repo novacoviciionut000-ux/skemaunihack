@@ -2,9 +2,15 @@
 import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import RouteInfo from './components/RouteInfo';
+import UserNav from './components/UserNav';
+import AuthModal from './components/AuthModal';
+import ProfileModal from './components/ProfileModal';
+import { useAuth } from './context/AuthContext';
 import { getRoute, getReports } from './api/client';
 
 export default function App() {
+  const { user } = useAuth();
+
   const [profile, setProfile] = useState('wheelchair');
   const [start, setStart] = useState(null);
   const [destination, setDestination] = useState(null);
@@ -13,6 +19,18 @@ export default function App() {
   const [placingMode, setPlacingMode] = useState('start'); // 'start' | 'end' | null
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Stare pentru modalele de autentificare și profil
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState('login'); // 'login' | 'register'
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+
+  // Sincronizează profilul de deplasare când utilizatorul se autentifică
+  useEffect(() => {
+    if (user?.preferredProfile) {
+      setProfile(user.preferredProfile);
+    }
+  }, [user?.preferredProfile]);
 
   // Live user location and map centering targets
   const [userLocation, setUserLocation] = useState(null);
@@ -129,11 +147,22 @@ export default function App() {
         }}
       />
 
-      {/* Top-left instruction banner */}
+      {/* Top-right Navigation & User Account Bar */}
+      <UserNav
+        onOpenAuth={(selectedMode) => {
+          setAuthModalMode(selectedMode || 'login');
+          setAuthModalOpen(true);
+        }}
+        onOpenProfile={() => setProfileModalOpen(true)}
+        currentProfile={profile}
+        onProfileChange={setProfile}
+      />
+
+      {/* Top instruction banner (re-centered taking care not to overlap UserNav) */}
       {placingMode && (
         <div style={{
           position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 1000, background: placingMode === 'start' ? '#2563eb' : '#16a34a',
+          zIndex: 999, background: placingMode === 'start' ? '#2563eb' : '#16a34a',
           color: 'white', padding: '10px 24px', borderRadius: 12,
           fontSize: 14, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
           pointerEvents: 'none', fontFamily: 'system-ui, sans-serif',
@@ -172,6 +201,29 @@ export default function App() {
         onRequestLocate={(coords) => {
           setUserLocation(coords);
           setCenterTarget({ lat: coords.lat, lng: coords.lng, zoom: 16 });
+        }}
+      />
+
+      {/* Auth Modal (Login / Register / Social OAuth) */}
+      <AuthModal
+        isOpen={authModalOpen}
+        initialMode={authModalMode}
+        onClose={() => setAuthModalOpen(false)}
+        onAuthSuccess={(loggedUser) => {
+          if (loggedUser?.preferredProfile) {
+            setProfile(loggedUser.preferredProfile);
+          }
+        }}
+      />
+
+      {/* User Profile & Security Settings Modal */}
+      <ProfileModal
+        isOpen={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        onProfileUpdated={(updatedUser) => {
+          if (updatedUser?.preferredProfile) {
+            setProfile(updatedUser.preferredProfile);
+          }
         }}
       />
     </div>

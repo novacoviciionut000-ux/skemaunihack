@@ -43,6 +43,11 @@ export default function ReportMarker({ report }) {
               {report.description}
             </div>
           )}
+          {report.authorName && (
+            <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>
+              Raportat de: <strong style={{ color: '#1f2937' }}>{report.authorName}</strong>
+            </div>
+          )}
           <div style={{
             display: 'flex',
             alignItems: 'center',

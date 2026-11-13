@@ -15,8 +15,24 @@ spring:
       idle-timeout: 30000
   jpa:
     hibernate:
-      ddl-auto: none
-    show-sql: true
+      ddl-auto: update
+    show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+jwt:
+  # Secret de cel puțin 256 de biți pentru semnătura HMAC-SHA256
+  secret: "***REMOVED***"
+  # Valabilitate token: 24 de ore (în milisecunde)
+  expiration-ms: 86400000
+
+auth:
+  rate-limit:
+    max-attempts: 5
+    lockout-duration-minutes: 15
+  oauth:
+    google:
+      client-id: "${GOOGLE_CLIENT_ID:mock-google-client-id}"
+    facebook:
+      app-id: "${FACEBOOK_APP_ID:mock-facebook-app-id}"

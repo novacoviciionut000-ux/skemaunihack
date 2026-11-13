@@ -68,7 +68,11 @@ if (-not $env:JAVA_HOME) {
             "$env:ProgramFiles\Java\*",
             "$env:ProgramFiles\Eclipse Adoptium\*",
             "${env:ProgramFiles(x86)}\Java\*",
-            "$env:LOCALAPPDATA\Programs\Eclipse Adoptium\*"
+            "$env:LOCALAPPDATA\Programs\Eclipse Adoptium\*",
+            "D:\App\PyCharm*\jbr",
+            "D:\App\CLion*\jbr",
+            "$env:SystemDrive\App\PyCharm*\jbr",
+            "$env:SystemDrive\App\CLion*\jbr"
         )
         $jdk = Get-ChildItem $candidatePaths -Directory -ErrorAction SilentlyContinue |
             Sort-Object Name | Select-Object -Last 1
