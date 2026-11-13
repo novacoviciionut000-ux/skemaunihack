@@ -23,6 +23,7 @@
     "vite": "^4.4.5"
   },
   "optionalDependencies": {
-    "@esbuild/linux-x64": "npm:null@*"
+    "@esbuild/linux-x64": "0.18.20",
+    "@esbuild/win32-x64": "0.18.20"
   }
 }

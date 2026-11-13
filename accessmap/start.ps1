@@ -108,6 +108,23 @@ if (-not (Test-Path (Join-Path $frontendDir 'node_modules'))) {
     Info 'Instalez dependintele frontend (npm install)...'
     Push-Location $frontendDir; npm install; Pop-Location
 }
+
+# Verificare si reparare automata a binarului esbuild pentru Windows
+$winEsbuild = Join-Path $frontendDir 'node_modules\@esbuild\win32-x64\esbuild.exe'
+if (-not (Test-Path $winEsbuild)) {
+    Write-Host "==> Lipseste binarul esbuild pentru Windows. Il repar automat..." -ForegroundColor Yellow
+    Push-Location $frontendDir
+    try {
+        npm rebuild esbuild
+    } catch {}
+    if (-not (Test-Path $winEsbuild)) {
+        try {
+            npm install --save-optional @esbuild/win32-x64@0.18.20
+        } catch {}
+    }
+    Pop-Location
+}
+
 Info 'Pornesc frontend-ul (Vite, :3000) intr-o fereastra noua...'
 $frontendCmd = "`$host.UI.RawUI.WindowTitle='AccessMap frontend'; Set-Location '$frontendDir'; npm run dev"
 Start-Process powershell -ArgumentList '-NoExit', '-Command', $frontendCmd
