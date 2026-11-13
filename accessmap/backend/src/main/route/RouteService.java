@@ -6,22 +6,20 @@ import org.springframework.stereotype.Service;
 public class RouteService {
 
     private final BlockedAreaProvider blockedAreaProvider;
+    private final GraphHopperClient graphHopperClient; // Am adăugat clientul
 
-    // Spring injectează automat NoopBlockedAreaProvider-ul creat mai sus
-    public RouteService(BlockedAreaProvider blockedAreaProvider) {
+    public RouteService(BlockedAreaProvider blockedAreaProvider, GraphHopperClient graphHopperClient) {
         this.blockedAreaProvider = blockedAreaProvider;
+        this.graphHopperClient = graphHopperClient;
     }
 
     public RouteResponse calculateRoute(double startLat, double startLon, double endLat, double endLon, String profile) {
-        // 1. Luăm obstacolele active de la Persoana B
+        // 1. Luăm obstacolele
         var blockedAreas = blockedAreaProvider.getActiveBlockedAreas();
 
-        // TODO: Integrarea cu GraphHopperClient va veni aici
-        // Vom trimite start, end și blockedAreas către GraphHopper
+        System.out.println("Cerem rută de la GraphHopper pt profil: " + profile);
 
-        System.out.println("Calculăm ruta pentru profilul: " + profile + ". Obstacole de evitat: " + blockedAreas.size());
-
-        // Returnăm date mockuite (false) pentru ca Persoana D să poată construi UI-ul
-        return new RouteResponse(null, 1500.5, 600.0);
+        // 2. Apelăm GraphHopper-ul cu obstacolele incluse
+        return graphHopperClient.fetchRoute(startLat, startLon, endLat, endLon, profile, blockedAreas);
     }
 }
