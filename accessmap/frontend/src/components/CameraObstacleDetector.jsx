@@ -33,10 +33,41 @@ const SEVERITY_COLORS = {
 };
 
 const INFERENCE_INTERVAL_MS = 180;
-const ALERT_COOLDOWN_MS = 1800;
+const ALERT_COOLDOWN_MS = 3000;
 const TILT_VIBRATE_COOLDOWN_MS = 2500;
-const SIDEWALK_EVENT_COOLDOWN_MS = 2500;
-const TILT_UP_BETA_THRESHOLD = 110; // >110 deg means phone is tilted too far upward
+const SIDEWALK_EVENT_COOLDOWN_MS = 3500;
+const TILT_UP_ENTER_DEG = 92; // >92 deg means phone is tilted too far upward (sky)
+const TILT_UP_EXIT_DEG = 85;
+const TILT_DOWN_ENTER_DEG = 18; // <18 deg means phone is pointing straight down at feet
+const TILT_DOWN_EXIT_DEG = 24;
+const TILT_ROLL_ENTER_DEG = 40; // |gamma| > 40 deg means phone is tilted sideways
+const TILT_ROLL_EXIT_DEG = 32;
+
+function playTiltFeedbackTone(audioCtx) {
+  if (!audioCtx) return;
+  try {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    const now = audioCtx.currentTime;
+    // Two short gentle low-mid pulses (works on iPhone where navigator.vibrate is unsupported)
+    [0, 0.14].forEach((offset, idx) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(idx === 0 ? 300 : 240, now + offset);
+      gain.gain.setValueAtTime(0.001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.095);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.1);
+    });
+  } catch {
+    // Ignore audio errors if blocked
+  }
+}
 
 export default function CameraObstacleDetector({
   isOpen,
@@ -54,8 +85,12 @@ export default function CameraObstacleDetector({
   const rafRef = useRef(null);
   const lastInferenceRef = useRef(0);
   const prevObstaclesRef = useRef([]);
+  const prevSidewalkRef = useRef(null);
+  const clearFramesRef = useRef(0);
   const lastAlertRef = useRef({ key: '', severity: '', time: 0 });
   const lastTiltVibrateRef = useRef(0);
+  const tiltSmoothedRef = useRef({ beta: null, gamma: null, activeReason: null });
+  const audioCtxRef = useRef(null);
   const lastSidewalkEventRef = useRef({ status: '', time: 0 });
   const hadActiveAlertRef = useRef(false);
 
@@ -72,6 +107,7 @@ export default function CameraObstacleDetector({
   const [activeAlert, setActiveAlert] = useState(null);
   const [sidewalkStatus, setSidewalkStatus] = useState(null);
   const [tiltWarning, setTiltWarning] = useState(false);
+  const [tiltMessage, setTiltMessage] = useState('');
   const [isRecordingDetour, setIsRecordingDetour] = useState(false);
   const [detourToast, setDetourToast] = useState('');
 
@@ -88,38 +124,85 @@ export default function CameraObstacleDetector({
       videoRef.current.srcObject = null;
     }
     prevObstaclesRef.current = [];
+    prevSidewalkRef.current = null;
+    clearFramesRef.current = 0;
+    tiltSmoothedRef.current = { beta: null, gamma: null, activeReason: null };
     setCameraActive(false);
     setDetectedObstacles([]);
     setActiveAlert(null);
     setSidewalkStatus(null);
     setTiltWarning(false);
+    setTiltMessage('');
   }, []);
 
-  // Phone tilt detection (DeviceOrientationEvent) + vibration
+  // Phone tilt detection (DeviceOrientationEvent) + vibration / iOS audio pulse
   useEffect(() => {
     if (!isOpen || !cameraActive) {
       setTiltWarning(false);
+      setTiltMessage('');
       return;
     }
 
     const handleOrientation = (event) => {
       if (event.beta == null) return;
-      const isTiltedTooHigh = event.beta > TILT_UP_BETA_THRESHOLD;
-      setTiltWarning(isTiltedTooHigh);
+      const state = tiltSmoothedRef.current;
+      const rawBeta = event.beta;
+      const rawGamma = event.gamma ?? 0;
 
-      if (isTiltedTooHigh) {
+      // Smooth orientation angles with EMA to ignore hand jitter
+      state.beta = state.beta == null ? rawBeta : state.beta * 0.75 + rawBeta * 0.25;
+      state.gamma = state.gamma == null ? rawGamma : state.gamma * 0.75 + rawGamma * 0.25;
+
+      const beta = state.beta;
+      const absGamma = Math.abs(state.gamma);
+
+      // Hysteresis per tilt direction
+      let reason = state.activeReason;
+      if (reason === 'up') {
+        if (beta < TILT_UP_EXIT_DEG) reason = null;
+      } else if (reason === 'down') {
+        if (beta > TILT_DOWN_EXIT_DEG) reason = null;
+      } else if (reason === 'roll') {
+        if (absGamma < TILT_ROLL_EXIT_DEG) reason = null;
+      }
+
+      if (!reason) {
+        if (beta > TILT_UP_ENTER_DEG) reason = 'up';
+        else if (beta < TILT_DOWN_ENTER_DEG) reason = 'down';
+        else if (absGamma > TILT_ROLL_ENTER_DEG) reason = 'roll';
+      }
+
+      state.activeReason = reason;
+      const isTilted = Boolean(reason);
+      setTiltWarning(isTilted);
+
+      if (isTilted) {
+        const msg =
+          reason === 'up'
+            ? 'Telefonul e înclinat prea în sus! Coboară-l ușor spre trotuar.'
+            : reason === 'down'
+              ? 'Telefonul e înclinat prea în jos! Ridică-l ușor spre înainte.'
+              : 'Telefonul e înclinat într-o parte! Ține-l drept spre trotuar.';
+        setTiltMessage(msg);
+
         const now = Date.now();
         if (now - lastTiltVibrateRef.current >= TILT_VIBRATE_COOLDOWN_MS) {
           lastTiltVibrateRef.current = now;
-          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
             navigator.vibrate([200, 90, 200]);
           }
+          // iPhone/iOS Safari does not support navigator.vibrate, so play subtle audio pulse
+          playTiltFeedbackTone(audioCtxRef.current);
           emitTiltWarningEvent({
-            beta: Math.round(event.beta),
-            messageRo: 'Telefonul este înclinat prea mult în sus. Coboară-l ușor spre trotuar.',
+            beta: Math.round(beta),
+            gamma: Math.round(state.gamma),
+            reason,
+            messageRo: msg,
             timestamp: now,
           });
         }
+      } else {
+        setTiltMessage('');
       }
     };
 
@@ -313,7 +396,15 @@ export default function CameraObstacleDetector({
           );
           prevObstaclesRef.current = analyzed;
 
-          const sidewalk = analyzeSidewalkPath(frameSample, analyzed);
+          // Only surface confirmed obstacles (seen >= 2 frames) to UI and voice events
+          const confirmedObstacles = analyzed.filter((o) => o.isConfirmed);
+
+          const sidewalk = analyzeSidewalkPath(
+            frameSample,
+            confirmedObstacles,
+            prevSidewalkRef.current
+          );
+          prevSidewalkRef.current = sidewalk;
           setSidewalkStatus(sidewalk);
 
           const now = Date.now();
@@ -326,15 +417,16 @@ export default function CameraObstacleDetector({
             emitSidewalkStatusEvent({ ...sidewalk, timestamp: now });
           }
 
-          setDetectedObstacles(analyzed);
-          drawOverlay(analyzed, sidewalk, width, height);
-          if (onObstaclesUpdate) onObstaclesUpdate(analyzed);
+          setDetectedObstacles(confirmedObstacles);
+          drawOverlay(confirmedObstacles, sidewalk, width, height);
+          if (onObstaclesUpdate) onObstaclesUpdate(confirmedObstacles);
 
-          const primaryThreat = analyzed.find(
+          const primaryThreat = confirmedObstacles.find(
             (o) => o.severity === 'danger' || o.severity === 'approaching'
           );
 
           if (primaryThreat) {
+            clearFramesRef.current = 0;
             setActiveAlert(primaryThreat);
             const alertKey = `${primaryThreat.class}:${primaryThreat.trafficLightState || ''}:${primaryThreat.zone}`;
             const escalated =
@@ -366,17 +458,20 @@ export default function CameraObstacleDetector({
                 sidewalk,
                 messageRo: primaryThreat.messageRo,
                 timestamp: now,
-                allObstacles: analyzed,
+                allObstacles: confirmedObstacles,
               };
 
               emitObstacleAlertEvent(payload);
               if (onObstacleAlert) onObstacleAlert(payload);
             }
           } else {
-            setActiveAlert(null);
-            if (hadActiveAlertRef.current) {
-              hadActiveAlertRef.current = false;
-              emitObstaclesClearEvent();
+            clearFramesRef.current += 1;
+            if (clearFramesRef.current >= 4) {
+              setActiveAlert(null);
+              if (hadActiveAlertRef.current) {
+                hadActiveAlertRef.current = false;
+                emitObstaclesClearEvent();
+              }
             }
           }
         } catch (err) {
@@ -393,6 +488,21 @@ export default function CameraObstacleDetector({
   const startCamera = useCallback(
     async (requestedFacingMode = facingMode) => {
       setError(null);
+
+      // Unlock Web Audio on user gesture (used for iPhone tilt feedback since iOS lacks navigator.vibrate)
+      if (!audioCtxRef.current && typeof window !== 'undefined') {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          try {
+            audioCtxRef.current = new AudioCtx();
+          } catch {
+            // Non-fatal
+          }
+        }
+      }
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {});
+      }
 
       // Request iOS 13+ DeviceOrientation permission on user gesture if needed
       if (
@@ -699,7 +809,7 @@ export default function CameraObstacleDetector({
             }}
           >
             <Smartphone size={16} style={{ flexShrink: 0 }} />
-            <span>Telefonul e înclinat prea în sus! Coboară-l spre trotuar.</span>
+            <span>{tiltMessage || 'Telefonul e înclinat prea în sus! Coboară-l spre trotuar.'}</span>
           </div>
         )}
 
