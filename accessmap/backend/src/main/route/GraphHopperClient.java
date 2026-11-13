@@ -1,6 +1,5 @@
 package com.accessmap.route;
 
-import com.accessmap.common.Coordinate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -8,6 +7,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import com.accessmap.common.Coordinate;
 
 @Component
 public class GraphHopperClient {
@@ -30,7 +30,7 @@ public class GraphHopperClient {
         if (blockedAreas != null && !blockedAreas.isEmpty()) {
             StringBuilder blockAreaParam = new StringBuilder();
             for (int i = 0; i < blockedAreas.size(); i++) {
-                blockAreaParam.append(blockedAreas.get(i).getLat()).append(",").append(blockedAreas.get(i).getLon());
+                blockAreaParam.append(blockedAreas.get(i).lat()).append(",").append(blockedAreas.get(i).lng());
                 if (i < blockedAreas.size() - 1) blockAreaParam.append(";"); // GraphHopper desparte punctele prin punct și virgulă
             }
             // Adăugăm o rază standard de evitare în jurul punctului (ex: 10 metri)
@@ -40,15 +40,14 @@ public class GraphHopperClient {
         try {
             // Trimitem cererea către GraphHopper
             Map<String, Object> response = restTemplate.getForObject(builder.toUriString(), Map.class);
-
-            // Extragem datele utile din JSON-ul imens pe care îl dă GraphHopper
-            List> paths = (List>) response.get("paths");
+// Extragem datele utile din JSON-ul obținut de la GraphHopper
+            List<Map<String, Object>> paths = (List<Map<String, Object>>) response.get("paths");
             if (paths != null && !paths.isEmpty()) {
                 Map<String, Object> bestPath = paths.get(0);
                 double distance = (Double) bestPath.get("distance");
                 double time = (Double) bestPath.get("time") / 1000.0; // din milisecunde în secunde
 
-                // Pentru MVP, lăsăm punctele goale până adăugăm decodarea poliliniei (vom face asta la pasul următor)
+                // Pentru MVP, lăsăm punctele goale până adăugăm decodarea poliliniei
                 return new RouteResponse(Collections.emptyList(), distance, time);
             }
         } catch (Exception e) {

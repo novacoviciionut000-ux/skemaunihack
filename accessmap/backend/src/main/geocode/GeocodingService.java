@@ -1,11 +1,10 @@
 package com.accessmap.geocode;
 
-import com.accessmap.common.Coordinate;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
-
+import com.accessmap.common.Coordinate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
