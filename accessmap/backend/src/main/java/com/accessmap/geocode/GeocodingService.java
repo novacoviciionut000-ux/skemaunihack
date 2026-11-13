@@ -1,10 +1,11 @@
 package com.accessmap.geocode;
 
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpHeaders;
+import com.accessmap.common.Coordinate;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
-import com.accessmap.common.Coordinate;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -16,40 +17,49 @@ public class GeocodingService {
     private final RestClient client;
     private final Map<String, GeocodeResult> cache = new ConcurrentHashMap<>();
 
+    @Value("${google.maps.api-key}")
+    private String apiKey;
+
     public GeocodingService(RestClient.Builder builder) {
         this.client = builder
-                .baseUrl("https://nominatim.openstreetmap.org")
-                // OBLIGATORIU: fără User-Agent propriu, Nominatim te poate bloca
-                .defaultHeader(HttpHeaders.USER_AGENT, "accessmap-hackathon/1.0 (emailul-tau@example.com)")
+                .baseUrl("https://maps.googleapis.com/maps/api/geocode")
                 .build();
     }
 
     /** O singură adresă -> coordonate. */
     public GeocodeResult geocode(String address) {
+        if (address == null || address.isBlank()) {
+            return new GeocodeResult(address, null, null);
+        }
+
         String key = address.trim().toLowerCase();
         GeocodeResult cached = cache.get(key);
         if (cached != null) return cached;
 
-        List<NominatimPlace> places = client.get()
-                .uri(u -> u.path("/search")
-                        .queryParam("q", "{q}")
-                        .queryParam("format", "jsonv2")
-                        .queryParam("limit", 1)
-                        .queryParam("countrycodes", "ro")
-                        .build(address))
+        GoogleGeocodeResponse response = client.get()
+                .uri(u -> u.path("/json")
+                        .queryParam("address", "{address}")
+                        .queryParam("components", "country:RO")
+                        .queryParam("bounds", "45.70,21.15|45.82,21.32") // prioritizează Timișoara
+                        .queryParam("language", "ro")
+                        .queryParam("key", apiKey)
+                        .build(address.trim()))
                 .retrieve()
-                .body(new ParameterizedTypeReference<List<NominatimPlace>>() {});
+                .body(GoogleGeocodeResponse.class);
 
         GeocodeResult result;
-        if (places == null || places.isEmpty()) {
+        if (response == null || response.results() == null || response.results().isEmpty()) {
             result = new GeocodeResult(address, null, null);
         } else {
-            NominatimPlace p = places.get(0);
+            GoogleResult top = response.results().get(0);
+            Location loc = top.geometry().location();
             result = new GeocodeResult(
                     address,
-                    p.displayName(),
-                    new Coordinate(Double.parseDouble(p.lat()), Double.parseDouble(p.lon())));
+                    top.formattedAddress(),
+                    new Coordinate(loc.lat(), loc.lng())
+            );
         }
+
         cache.put(key, result);
         return result;
     }
@@ -58,25 +68,31 @@ public class GeocodingService {
     public List<GeocodeResult> suggest(String query, int limit) {
         if (query == null || query.trim().length() < 2) return List.of();
 
+        int safeLimit = Math.min(Math.max(limit, 1), 10);
+
         try {
-            List<NominatimPlace> places = client.get()
-                    .uri(u -> u.path("/search")
-                            .queryParam("q", "{q}")
-                            .queryParam("format", "jsonv2")
-                            .queryParam("limit", Math.min(Math.max(limit, 1), 10))
-                            .queryParam("countrycodes", "ro")
+            GoogleGeocodeResponse response = client.get()
+                    .uri(u -> u.path("/json")
+                            .queryParam("address", "{address}")
+                            .queryParam("components", "country:RO")
+                            .queryParam("bounds", "45.70,21.15|45.82,21.32")
+                            .queryParam("language", "ro")
+                            .queryParam("key", apiKey)
                             .build(query.trim()))
                     .retrieve()
-                    .body(new ParameterizedTypeReference<List<NominatimPlace>>() {});
+                    .body(GoogleGeocodeResponse.class);
 
             List<GeocodeResult> results = new ArrayList<>();
-            if (places != null) {
-                for (NominatimPlace p : places) {
-                    if (p.lat() != null && p.lon() != null) {
+            if (response != null && response.results() != null) {
+                for (GoogleResult r : response.results()) {
+                    if (results.size() >= safeLimit) break;
+                    if (r.geometry() != null && r.geometry().location() != null) {
+                        Location loc = r.geometry().location();
                         results.add(new GeocodeResult(
-                                p.displayName(),
-                                p.displayName(),
-                                new Coordinate(Double.parseDouble(p.lat()), Double.parseDouble(p.lon()))));
+                                r.formattedAddress(),
+                                r.formattedAddress(),
+                                new Coordinate(loc.lat(), loc.lng())
+                        ));
                     }
                 }
             }
@@ -86,22 +102,18 @@ public class GeocodingService {
         }
     }
 
-    /** Mai multe adrese. Nominatim public permite ~1 cerere/secundă, deci așteptăm între ele. */
+    /** Mai multe adrese. Google permite 50 req/sec, deci am scos pauza de 1.1s de la Nominatim. */
     public List<GeocodeResult> geocodeAll(List<String> addresses) {
         List<GeocodeResult> results = new ArrayList<>();
         for (String address : addresses) {
-            boolean wasCached = cache.containsKey(address.trim().toLowerCase());
             results.add(geocode(address));
-            if (!wasCached) sleep(1100);
         }
         return results;
     }
 
-    private void sleep(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
+    // Record-uri interne pentru maparea automată a răspunsului JSON de la Google
+    private record GoogleGeocodeResponse(List<GoogleResult> results, String status) {}
+    private record GoogleResult(@JsonProperty("formatted_address") String formattedAddress, Geometry geometry) {}
+    private record Geometry(Location location) {}
+    private record Location(double lat, double lng) {}
 }

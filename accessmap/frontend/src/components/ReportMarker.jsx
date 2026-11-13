@@ -137,13 +137,11 @@ export default function ReportMarker({ report }) {
               {report.description}
             </div>
           )}
-<<<<<<< HEAD
           {report.authorName && (
             <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>
               Raportat de: <strong style={{ color: '#1f2937' }}>{report.authorName}</strong>
             </div>
           )}
-=======
 
           {/* Coordinates info */}
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 10 }}>
@@ -151,7 +149,6 @@ export default function ReportMarker({ report }) {
           </div>
 
           {/* Upvote & confirmation action */}
->>>>>>> 6059b81ad10eb27e1b796064fd72db25756fd2f9
           <div style={{
             display: 'flex',
             alignItems: 'center',

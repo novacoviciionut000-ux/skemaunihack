@@ -309,6 +309,12 @@ export const geocodeQuery = async (query) => {
     return [];
 };
 
+/** Folosit de VoiceButton.jsx: caută adresa prin Google Geocoding (/api/geocode/suggest) + fallback-uri */
+export const geocodeAddress = async (query) => {
+    const list = await searchSuggestions(query);
+    return list && list.length > 0 ? list[0] : null;
+};
+
 /** GET /api/v1/route -> { coordinates: [[lat, lng]], distanceMeters, timeSeconds } */
 export const getRoute = async (startCoords, endCoords, profile = 'wheelchair') => {
     // 1. Încercăm backend-ul Spring Boot (care apelează GraphHopper local cu profilul dedicat de mobilitate)

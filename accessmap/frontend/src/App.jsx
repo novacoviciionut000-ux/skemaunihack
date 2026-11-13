@@ -5,6 +5,7 @@ import RouteInfo from './components/RouteInfo';
 import UserNav from './components/UserNav';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
+import VoiceButton from './components/VoiceButton';
 import { useAuth } from './context/AuthContext';
 import { getRoute, getReports } from './api/client';
 
@@ -19,6 +20,10 @@ export default function App() {
   const [placingMode, setPlacingMode] = useState('start'); // 'start' | 'end' | null
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Stări noi pentru modul vocal și urgență
+  const [voiceTriggered, setVoiceTriggered] = useState(false);
+  const [emergencyActive, setEmergencyActive] = useState(false);
 
   // Stare pentru modalele de autentificare și profil
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -61,6 +66,64 @@ export default function App() {
         setLoading(false);
       });
   }, [start, destination, profile]);
+
+  // Citește vocal detaliile rutei când traseul a fost cerut prin comandă vocală
+  useEffect(() => {
+    if (voiceTriggered && routeData && 'speechSynthesis' in window) {
+      const dist = routeData.distanceMeters ?? '';
+      const mins = routeData.timeSeconds ? Math.max(1, Math.round(routeData.timeSeconds / 60)) : '';
+      const warning = routeData.warnings?.length > 0 ? ` Atenție: ${routeData.warnings[0]}` : '';
+      
+      const message = `Traseu calculat. Distanța este de ${dist} metri, aproximativ ${mins} minute.${warning}`;
+      
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(message);
+      utterance.lang = 'ro-RO';
+      window.speechSynthesis.speak(utterance);
+
+      setVoiceTriggered(false);
+    }
+  }, [routeData, voiceTriggered]);
+
+  // Handler pentru destinația primită din VoiceButton
+  const handleVoiceDestination = useCallback(
+    (dest) => {
+      setVoiceTriggered(true);
+      setProfile('low_vision'); // Comută automat pe profilul pentru nevăzători
+      
+      const destCoords = { lat: dest.lat, lng: dest.lng };
+      setDestination(destCoords);
+      setPlacingMode(null);
+      setCenterTarget({ lat: dest.lat, lng: dest.lng, zoom: 15 });
+
+      // Dacă utilizatorul nu a pus manual un punct de plecare, îl luăm automat din GPS
+      if (!start) {
+        if (userLocation) {
+          setStart(userLocation);
+        } else if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              const gpsCoords = {
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy,
+              };
+              setUserLocation(gpsCoords);
+              setStart(gpsCoords);
+            },
+            () => {
+              // Fallback în centrul Timișoarei (Piața Victoriei) dacă GPS-ul e blocat în clădire la demo
+              setStart({ lat: 45.7537, lng: 21.2257 });
+            },
+            { enableHighAccuracy: true, timeout: 5000 }
+          );
+        } else {
+          setStart({ lat: 45.7537, lng: 21.2257 });
+        }
+      }
+    },
+    [start, userLocation]
+  );
 
   const handleMapClick = useCallback(
     (latlng) => {
@@ -134,14 +197,13 @@ export default function App() {
         routeData={routeData}
         obstacles={obstacles}
         onMapClick={handleMapClick}
-        onStartChange={setStart}
-        onDestinationChange={setDestination}
         placingMode={placingMode}
         userLocation={userLocation}
+        onUserLocation={setUserLocation}
         centerTarget={centerTarget}
-        isLocating={isLocating}
         onLocateMe={handleLocateMe}
-        onUseAsStart={(coords) => {
+        isLocating={isLocating}
+        onSetStart={(coords) => {
           setStart(coords);
           setPlacingMode('end');
         }}
@@ -173,6 +235,30 @@ export default function App() {
         </div>
       )}
 
+      {/* Banner de urgență activat prin comandă vocală ("Ajutor" / "112") */}
+      {emergencyActive && (
+        <div style={{
+          position: 'absolute', top: 70, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1100, background: '#DC2626', color: 'white', padding: '16px 24px',
+          borderRadius: 12, fontWeight: 'bold', boxShadow: '0 8px 24px rgba(220,38,38,0.5)',
+          display: 'flex', alignItems: 'center', gap: 16, fontFamily: 'system-ui, sans-serif'
+        }}>
+          <span>🚨 URGENȚĂ ACTIVATĂ! Coordonate pregătite pentru 112.</span>
+          <a
+            href="tel:112"
+            style={{ background: 'white', color: '#DC2626', padding: '8px 14px', borderRadius: 8, textDecoration: 'none' }}
+          >
+            SUNĂ 112
+          </a>
+          <button
+            onClick={() => setEmergencyActive(false)}
+            style={{ background: 'transparent', color: 'white', border: '1px solid white', borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}
+          >
+            Închide
+          </button>
+        </div>
+      )}
+
       {/* Route info bar */}
       {(routeData || loading || error) && (
         <RouteInfo
@@ -182,6 +268,20 @@ export default function App() {
           onClear={handleClearRoute}
         />
       )}
+
+      {/* Butonul de comandă vocală (poziționat dreapta-jos ca să nu blocheze harta sau Sidebar-ul) */}
+      <div style={{
+        position: 'absolute',
+        bottom: 24,
+        right: 24,
+        zIndex: 1000,
+        width: 'min(360px, calc(100vw - 32px))'
+      }}>
+        <VoiceButton
+          onDestinationSet={handleVoiceDestination}
+          onEmergency={() => setEmergencyActive(true)}
+        />
+      </div>
 
       {/* Sidebar panel */}
       <Sidebar

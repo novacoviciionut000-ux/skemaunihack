@@ -36,3 +36,6 @@ auth:
       client-id: "${GOOGLE_CLIENT_ID:mock-google-client-id}"
     facebook:
       app-id: "${FACEBOOK_APP_ID:mock-facebook-app-id}"
+google:
+  maps:
+    api-key: ***REMOVED***
