@@ -3,46 +3,31 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#ffffff">
+    <meta name="theme-color" content="#2563eb">
     <title>AccessMap - Accessible City Navigation</title>
+
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!--<style>
-        /* Base full-screen styles */
-        html, body, #root {
-            margin: 0;
-            padding: 0;
-            width: 100vw;
-            height: 100vh;
-            overflow: hidden;
-            font-family: system-ui, sans-serif;
-        }
-
-        .sr-only {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            padding: 0;
-            margin: -1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
-            border: 0;
-        }
-
-        button:focus, input:focus {
-            outline: 4px solid #2563eb;
-            outline-offset: 2px;
-        }
-        /* High contrast focus for visual impairments */
-    </style>-->
 
     <style>
+        * {
+            box-sizing: border-box;
+        }
+
         html, body, #root {
             margin: 0;
             padding: 0;
             width: 100vw;
             height: 100vh;
             overflow: hidden;
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         .sr-only {
@@ -56,11 +41,64 @@
             border: 0;
         }
 
-        /* FORCE THE MAP TO FILL THE SCREEN AND SHOW A GRAY BACKGROUND IF TILES FAIL */
         .leaflet-container {
             width: 100vw !important;
             height: 100vh !important;
-            background-color: #ddd !important;
+            background-color: #f3f4f6 !important;
+        }
+
+        /* Modern Leaflet popup styles */
+        .leaflet-popup-content-wrapper {
+            border-radius: 14px !important;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15) !important;
+            padding: 6px !important;
+        }
+
+        .leaflet-popup-tip {
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15) !important;
+        }
+
+        /* High-contrast focus outline for accessibility */
+        button:focus-visible, input:focus-visible, textarea:focus-visible {
+            outline: 3px solid #2563eb !important;
+            outline-offset: 2px !important;
+        }
+
+        /* Pulsing animation for user location marker */
+        @keyframes userLocationPulse {
+            0% {
+                transform: scale(0.9);
+                opacity: 0.8;
+            }
+            70% {
+                transform: scale(2.6);
+                opacity: 0;
+            }
+            100% {
+                transform: scale(2.6);
+                opacity: 0;
+            }
+        }
+
+        .user-pulse-ring {
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: rgba(37, 99, 235, 0.4);
+            animation: userLocationPulse 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+        }
+
+        .user-location-dot {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #2563eb;
+            border: 3px solid white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.35);
         }
     </style>
 </head>

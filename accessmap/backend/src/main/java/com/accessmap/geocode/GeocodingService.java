@@ -54,6 +54,38 @@ public class GeocodingService {
         return result;
     }
 
+    /** Autocomplete / sugestii pentru o căutare (max limit rezultate) */
+    public List<GeocodeResult> suggest(String query, int limit) {
+        if (query == null || query.trim().length() < 2) return List.of();
+
+        try {
+            List<NominatimPlace> places = client.get()
+                    .uri(u -> u.path("/search")
+                            .queryParam("q", "{q}")
+                            .queryParam("format", "jsonv2")
+                            .queryParam("limit", Math.min(Math.max(limit, 1), 10))
+                            .queryParam("countrycodes", "ro")
+                            .build(query.trim()))
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<NominatimPlace>>() {});
+
+            List<GeocodeResult> results = new ArrayList<>();
+            if (places != null) {
+                for (NominatimPlace p : places) {
+                    if (p.lat() != null && p.lon() != null) {
+                        results.add(new GeocodeResult(
+                                p.displayName(),
+                                p.displayName(),
+                                new Coordinate(Double.parseDouble(p.lat()), Double.parseDouble(p.lon()))));
+                    }
+                }
+            }
+            return results;
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
     /** Mai multe adrese. Nominatim public permite ~1 cerere/secundă, deci așteptăm între ele. */
     public List<GeocodeResult> geocodeAll(List<String> addresses) {
         List<GeocodeResult> results = new ArrayList<>();

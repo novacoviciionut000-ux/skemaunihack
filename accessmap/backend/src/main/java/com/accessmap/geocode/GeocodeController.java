@@ -25,6 +25,12 @@ public class GeocodeController {
         return service.geocode(q);
     }
 
+    /** GET /api/geocode/suggest?q=Piata&limit=5 */
+    @GetMapping("/suggest")
+    public List<GeocodeResult> suggest(@RequestParam String q, @RequestParam(defaultValue = "5") int limit) {
+        return service.suggest(q, limit);
+    }
+
     /** POST /api/geocode/batch cu body: ["adresa 1", "adresa 2"] */
     @PostMapping("/batch")
     public List<GeocodeResult> many(@RequestBody List<String> addresses) {

@@ -64,10 +64,39 @@ public class GraphHopperClient {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Eroare la comunicarea cu GraphHopper: " + e.getMessage());
+            System.err.println("GraphHopper local indisponibil (" + e.getMessage() + "), folosesc fallback OSRM foot routing...");
         }
 
-        // Fallback dacă a picat ceva
+        // Fallback: Ruterul de pietoni OpenStreetMap (OSRM Foot) care urmează trotuarele și străzile reale
+        try {
+            String osrmUrl = String.format(
+                    "https://routing.openstreetmap.de/routed-foot/route/v1/foot/%s,%s;%s,%s?overview=full&geometries=geojson",
+                    Double.toString(startLon), Double.toString(startLat),
+                    Double.toString(endLon), Double.toString(endLat));
+
+            Map<String, Object> osrmResponse = restTemplate.getForObject(osrmUrl, Map.class);
+            if (osrmResponse != null && "Ok".equalsIgnoreCase((String) osrmResponse.get("code"))) {
+                List<Map<String, Object>> routes = (List<Map<String, Object>>) osrmResponse.get("routes");
+                if (routes != null && !routes.isEmpty()) {
+                    Map<String, Object> route = routes.get(0);
+                    double distance = ((Number) route.get("distance")).doubleValue();
+                    double duration = ((Number) route.get("duration")).doubleValue();
+
+                    Map<String, Object> geometry = (Map<String, Object>) route.get("geometry");
+                    if (geometry != null && geometry.get("coordinates") instanceof List<?> coords) {
+                        List<Coordinate> path = coords.stream()
+                                .map(c -> (List<Number>) c)
+                                .map(c -> new Coordinate(c.get(1).doubleValue(), c.get(0).doubleValue()))
+                                .collect(Collectors.toList());
+                        return new RouteResponse(path, distance, duration);
+                    }
+                }
+            }
+        } catch (Exception osrmEx) {
+            System.err.println("Eroare la fallback-ul OSRM: " + osrmEx.getMessage());
+        }
+
+        // Fallback dacă au eșuat ambele
         return new RouteResponse(Collections.emptyList(), 0, 0);
     }
 }

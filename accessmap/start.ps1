@@ -12,7 +12,11 @@ $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $backendDir = Join-Path $root 'backend'
 $frontendDir = Join-Path $root 'frontend'
-$mvnw = Join-Path $root '..\backend\mvnw.cmd'
+
+$mvnw = Join-Path $backendDir 'mvnw.cmd'
+if (-not (Test-Path $mvnw)) {
+    $mvnw = Join-Path $root '..\backend\mvnw.cmd'
+}
 
 function Info($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Fail($msg) { Write-Host "XX  $msg" -ForegroundColor Red; exit 1 }
@@ -44,15 +48,41 @@ if ($Stop) {
 # ---------- Verificari ----------
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Fail 'Docker nu e instalat / nu e in PATH.' }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue))    { Fail 'Node.js/npm nu e instalat / nu e in PATH.' }
-if (-not (Test-Path $mvnw))                                  { Fail "Nu gasesc Maven wrapper-ul: $mvnw" }
+if (-not (Test-Path $mvnw) -and -not (Get-Command mvn -ErrorAction SilentlyContinue)) {
+    Fail "Nu gasesc Maven wrapper-ul ($mvnw) si nici comanda 'mvn' nu e in PATH."
+}
 
 if (-not $env:JAVA_HOME) {
-    $jdk = Get-ChildItem "$HOME\.jdks" -Directory -ErrorAction SilentlyContinue |
-        Sort-Object Name | Select-Object -Last 1
-    if (-not $jdk) { Fail 'JAVA_HOME nu e setat si nu am gasit niciun JDK in ~\.jdks' }
-    $env:JAVA_HOME = $jdk.FullName
+    if (Get-Command java -ErrorAction SilentlyContinue) {
+        try {
+            $javaCmd = (Get-Command java).Source
+            $javaDir = Split-Path (Split-Path $javaCmd -Parent) -Parent
+            if (Test-Path (Join-Path $javaDir "bin\java.exe")) {
+                $env:JAVA_HOME = $javaDir
+            }
+        } catch {}
+    }
+    if (-not $env:JAVA_HOME) {
+        $candidatePaths = @(
+            "$HOME\.jdks\*",
+            "$env:ProgramFiles\Java\*",
+            "$env:ProgramFiles\Eclipse Adoptium\*",
+            "${env:ProgramFiles(x86)}\Java\*",
+            "$env:LOCALAPPDATA\Programs\Eclipse Adoptium\*"
+        )
+        $jdk = Get-ChildItem $candidatePaths -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name | Select-Object -Last 1
+        if ($jdk) { $env:JAVA_HOME = $jdk.FullName }
+    }
+    if (-not $env:JAVA_HOME) {
+        if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
+            Fail 'JAVA_HOME nu e setat si comanda java nu a fost gasita.'
+        }
+    }
 }
-Info "JAVA_HOME = $env:JAVA_HOME"
+if ($env:JAVA_HOME) {
+    Info "JAVA_HOME = $env:JAVA_HOME"
+}
 
 docker info *> $null
 if ($LASTEXITCODE -ne 0) { Fail 'Docker nu ruleaza. Porneste Docker Desktop si incearca din nou.' }
