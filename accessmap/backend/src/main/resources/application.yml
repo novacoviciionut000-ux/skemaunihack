@@ -1,0 +1,13 @@
+supabase:
+  url: "https://prysdmeydggkisznbgc.supabase.co"
+  key: "COPIAZA_PUBLISHABLE_KEY_DE_PE_ECRAN" # cea care începe cu sb_publishable_...
+
+spring:
+  datasource:
+    url: "jdbc:postgresql://db.prysdmeydggkisznbgc.supabase.co:5432/postgres"
+    username: "postgres"
+    password: "***REMOVED***"
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
