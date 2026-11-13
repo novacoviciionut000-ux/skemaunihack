@@ -137,11 +137,19 @@ export default function ReportMarker({ report }) {
               {report.description}
             </div>
           )}
+<<<<<<< HEAD
+=======
+
+>>>>>>> eaa8c832cf59c82eac2443a3b5cac3482e40011c
           {report.authorName && (
             <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>
               Raportat de: <strong style={{ color: '#1f2937' }}>{report.authorName}</strong>
             </div>
           )}
+<<<<<<< HEAD
+=======
+
+>>>>>>> eaa8c832cf59c82eac2443a3b5cac3482e40011c
 
           {/* Coordinates info */}
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 10 }}>
