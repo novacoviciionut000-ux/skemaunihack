@@ -9,6 +9,7 @@ import VoiceButton from './components/VoiceButton';
 import CameraObstacleDetector from './components/CameraObstacleDetector';
 import { useAuth } from './context/AuthContext';
 import { getRoute, getReports } from './api/client';
+import { useIsMobile } from './hooks/useIsMobile';
 import {
   loadSavedDetours,
   saveDetour,
@@ -18,6 +19,10 @@ import {
 
 export default function App() {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= 768 : false
+  );
 
   const [profile, setProfile] = useState('wheelchair');
   const [start, setStart] = useState(null);
@@ -231,7 +236,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ height: '100vh', width: '100vw', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ height: '100dvh', width: '100vw', position: 'relative', overflow: 'hidden' }}>
       {/* Full-screen map */}
       <Map
         start={start}
@@ -264,17 +269,31 @@ export default function App() {
         onProfileChange={setProfile}
       />
 
-      {/* Top instruction banner (re-centered taking care not to overlap UserNav) */}
+      {/* Top instruction banner */}
       {placingMode && (
         <div style={{
-          position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 999, background: placingMode === 'start' ? '#2563eb' : '#16a34a',
-          color: 'white', padding: '10px 24px', borderRadius: 12,
-          fontSize: 14, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-          pointerEvents: 'none', fontFamily: 'system-ui, sans-serif',
-          display: 'flex', alignItems: 'center', gap: 8,
+          position: 'absolute',
+          top: isMobile ? 60 : 16,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 999,
+          background: placingMode === 'start' ? '#2563eb' : '#16a34a',
+          color: 'white',
+          padding: isMobile ? '8px 14px' : '10px 24px',
+          borderRadius: 12,
+          fontSize: isMobile ? 12.5 : 14,
+          fontWeight: 600,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+          pointerEvents: 'none',
+          fontFamily: 'system-ui, sans-serif',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          maxWidth: isMobile ? 'calc(100vw - 24px)' : 'none',
+          whiteSpace: isMobile ? 'normal' : 'nowrap',
+          textAlign: 'center',
         }}>
-          <span style={{ fontSize: 18 }}>{placingMode === 'start' ? '📍' : '🏁'}</span>
+          <span style={{ fontSize: isMobile ? 15 : 18 }}>{placingMode === 'start' ? '📍' : '🏁'}</span>
           {placingMode === 'start' ? 'Apasă pe hartă pentru punctul de plecare' : 'Apasă pe hartă pentru destinație'}
         </div>
       )}
@@ -282,10 +301,24 @@ export default function App() {
       {/* Banner de urgență activat prin comandă vocală ("Ajutor" / "112") */}
       {emergencyActive && (
         <div style={{
-          position: 'absolute', top: 70, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 1100, background: '#DC2626', color: 'white', padding: '16px 24px',
-          borderRadius: 12, fontWeight: 'bold', boxShadow: '0 8px 24px rgba(220,38,38,0.5)',
-          display: 'flex', alignItems: 'center', gap: 16, fontFamily: 'system-ui, sans-serif'
+          position: 'absolute',
+          top: isMobile ? 60 : 70,
+          left: isMobile ? 12 : '50%',
+          right: isMobile ? 12 : 'auto',
+          transform: isMobile ? 'none' : 'translateX(-50%)',
+          zIndex: 1100,
+          background: '#DC2626',
+          color: 'white',
+          padding: isMobile ? '12px 14px' : '16px 24px',
+          borderRadius: 12,
+          fontWeight: 'bold',
+          boxShadow: '0 8px 24px rgba(220,38,38,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 10,
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: isMobile ? 13 : 14,
         }}>
           <span>🚨 URGENȚĂ ACTIVATĂ! Coordonate pregătite pentru 112.</span>
           <a
@@ -313,21 +346,24 @@ export default function App() {
         />
       )}
 
-      {/* Butonul de comandă vocală (poziționat dreapta-jos ca să nu blocheze harta sau Sidebar-ul) */}
-      <div style={{
-        position: 'absolute',
-        bottom: 24,
-        right: 24,
-        zIndex: 1000,
-        width: 'min(360px, calc(100vw - 32px))'
-      }}>
-        <VoiceButton
-          onDestinationSet={handleVoiceDestination}
-          onEmergency={() => setEmergencyActive(true)}
-          onCameraOpen={() => setCameraOpen(true)}
-          onCameraClose={() => setCameraOpen(false)}
-        />
-      </div>
+      {/* Butonul de comandă vocală (pe mobil se ascunde când Planificatorul e deschis ca să nu se suprapună) */}
+      {(!isMobile || sidebarCollapsed) && (
+        <div style={{
+          position: 'absolute',
+          bottom: isMobile ? 36 : 24,
+          right: isMobile ? 4 : 24,
+          left: isMobile ? 4 : 'auto',
+          zIndex: 999,
+          width: isMobile ? 'auto' : 340,
+        }}>
+          <VoiceButton
+            onDestinationSet={handleVoiceDestination}
+            onEmergency={() => setEmergencyActive(true)}
+            onCameraOpen={() => setCameraOpen(true)}
+            onCameraClose={() => setCameraOpen(false)}
+          />
+        </div>
+      )}
 
       {/* Camera Obstacle Detector overlay */}
       <CameraObstacleDetector
@@ -362,6 +398,8 @@ export default function App() {
         }}
         cameraOpen={cameraOpen}
         onToggleCamera={() => setCameraOpen((prev) => !prev)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={setSidebarCollapsed}
       />
 
       {/* Auth Modal (Login / Register / Social OAuth) */}

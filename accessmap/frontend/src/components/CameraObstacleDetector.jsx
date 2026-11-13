@@ -25,6 +25,7 @@ import {
   emitTiltWarningEvent,
 } from '../utils/obstacleDetector';
 import { distanceMetersBetween } from '../utils/detourStore';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const SEVERITY_COLORS = {
   danger: { stroke: '#ef4444', fill: 'rgba(239, 68, 68, 0.18)', badgeBg: '#dc2626' },
@@ -78,6 +79,7 @@ export default function CameraObstacleDetector({
   nearbyDetour,
   onDetourSaved,
 }) {
+  const isMobile = useIsMobile();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -579,7 +581,9 @@ export default function CameraObstacleDetector({
 
   if (!isOpen) return null;
 
-  const panelWidth = expanded ? 'min(94vw, 640px)' : 'min(92vw, 370px)';
+  const panelWidth = isMobile
+    ? 'calc(100vw - 24px)'
+    : expanded ? 'min(94vw, 640px)' : 'min(92vw, 370px)';
 
   return (
     <div
@@ -587,9 +591,12 @@ export default function CameraObstacleDetector({
       aria-label="Detector obstacole cu cameră"
       style={{
         position: 'absolute',
-        top: 74,
-        left: 16,
+        top: isMobile ? 60 : 74,
+        left: isMobile ? 12 : 16,
+        right: isMobile ? 12 : 'auto',
         width: panelWidth,
+        maxWidth: isMobile ? 440 : 'none',
+        margin: isMobile ? '0 auto' : 0,
         zIndex: 1050,
         background: '#0f172a',
         color: '#f8fafc',

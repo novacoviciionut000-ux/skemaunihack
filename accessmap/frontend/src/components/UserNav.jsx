@@ -11,6 +11,7 @@ import {
   Accessibility
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 export default function UserNav({
   onOpenAuth,
@@ -19,6 +20,7 @@ export default function UserNav({
   onProfileChange
 }) {
   const { user, isAuthenticated, logout } = useAuth();
+  const isMobile = useIsMobile();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -56,30 +58,31 @@ export default function UserNav({
       ref={dropdownRef}
       style={{
         position: 'absolute',
-        top: 16,
-        right: 16,
-        zIndex: 1000,
+        top: isMobile ? 12 : 16,
+        right: isMobile ? 12 : 16,
+        zIndex: 1002,
         fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
       }}
     >
       {!isAuthenticated ? (
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: isMobile ? 6 : 8 }}>
           <button
             onClick={() => onOpenAuth('login')}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 8,
-              padding: '9px 18px',
+              gap: isMobile ? 5 : 8,
+              padding: isMobile ? '8px 12px' : '9px 18px',
               backgroundColor: '#ffffff',
               color: '#1e293b',
               border: '1.5px solid #e2e8f0',
               borderRadius: 30,
-              fontSize: 14,
+              fontSize: isMobile ? 12.5 : 14,
               fontWeight: 600,
               cursor: 'pointer',
               boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
               transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
             }}
             onMouseOver={(e) => {
               e.currentTarget.style.borderColor = '#2563eb';
@@ -90,7 +93,7 @@ export default function UserNav({
               e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)';
             }}
           >
-            <LogIn size={16} style={{ color: '#2563eb' }} />
+            <LogIn size={isMobile ? 14 : 16} style={{ color: '#2563eb' }} />
             <span>Conectare</span>
           </button>
 
@@ -99,17 +102,18 @@ export default function UserNav({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              padding: '9px 18px',
+              gap: isMobile ? 5 : 6,
+              padding: isMobile ? '8px 12px' : '9px 18px',
               backgroundColor: '#2563eb',
               color: '#ffffff',
               border: 'none',
               borderRadius: 30,
-              fontSize: 14,
+              fontSize: isMobile ? 12.5 : 14,
               fontWeight: 600,
               cursor: 'pointer',
               boxShadow: '0 4px 16px rgba(37,99,235,0.3)',
               transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
             }}
             onMouseOver={(e) => {
               e.currentTarget.style.backgroundColor = '#1d4ed8';

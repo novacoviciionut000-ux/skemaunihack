@@ -13,6 +13,7 @@ import {
 import L from 'leaflet';
 import { Layers, Check, Crosshair, Loader2, Navigation } from 'lucide-react';
 import ReportMarker from './ReportMarker';
+import { useIsMobile } from '../hooks/useIsMobile';
 import 'leaflet/dist/leaflet.css';
 
 // Fix default Leaflet marker icons for Vite
@@ -199,6 +200,7 @@ export default function Map({
   onLocateMe,
   onUseAsStart,
 }) {
+  const isMobile = useIsMobile();
   const [activeStyle, setActiveStyle] = useState('osm');
   const [showStyleMenu, setShowStyleMenu] = useState(false);
   const currentTileConfig = MAP_STYLES[activeStyle] || MAP_STYLES.osm;
@@ -210,32 +212,33 @@ export default function Map({
       {/* Floating Map Style Selector (Top-Left) */}
       <div style={{
         position: 'absolute',
-        top: 20,
-        left: 20,
-        zIndex: 1000,
-        fontFamily: "'Inter', system-ui, sans-serif",
+        top: isMobile ? 12 : 20,
+        left: isMobile ? 12 : 20,
+        zIndex: 1002,
+        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
       }}>
         <button
           onClick={() => setShowStyleMenu(!showStyleMenu)}
           style={{
             background: 'white',
             border: '1px solid #e5e7eb',
-            borderRadius: 14,
-            padding: '10px 14px',
+            borderRadius: isMobile ? 30 : 14,
+            padding: isMobile ? '8px 12px' : '10px 14px',
             boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            fontSize: 13,
+            gap: isMobile ? 6 : 8,
+            fontSize: isMobile ? 12.5 : 13,
             fontWeight: 700,
             color: '#1f2937',
             transition: 'all 0.15s ease',
+            whiteSpace: 'nowrap',
           }}
           title="Schimbă stilul hărții"
         >
-          <Layers size={18} color="#2563eb" />
-          <span>{currentTileConfig.icon} {currentTileConfig.name}</span>
+          <Layers size={isMobile ? 15 : 18} color="#2563eb" />
+          <span>{currentTileConfig.icon} {isMobile ? 'Hartă' : currentTileConfig.name}</span>
         </button>
 
         {showStyleMenu && (
@@ -308,9 +311,9 @@ export default function Map({
         disabled={isLocating}
         style={{
           position: 'absolute',
-          bottom: 85,
+          bottom: isMobile ? 210 : 85,
           right: 12,
-          zIndex: 1000,
+          zIndex: 998,
           background: 'white',
           border: '1px solid #e2e8f0',
           borderRadius: 12,
@@ -339,7 +342,7 @@ export default function Map({
         style={{ height: '100%', width: '100%', cursor: cursorStyle }}
         zoomControl={false}
       >
-        <ZoomControl position="bottomright" />
+        {!isMobile && <ZoomControl position="bottomright" />}
 
         {/* Dynamic Tile Layer (100% Free, NO API Key) */}
         <TileLayer

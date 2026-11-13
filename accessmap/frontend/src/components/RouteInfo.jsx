@@ -1,16 +1,20 @@
 import React from 'react';
 import { Clock, Navigation, AlertCircle, X, ShieldCheck } from 'lucide-react';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 export default function RouteInfo({ routeData, loading, error, onClear }) {
+  const isMobile = useIsMobile();
+
   if (loading) {
     return (
       <div style={{
         position: 'absolute',
-        top: 20,
-        right: 20,
+        top: isMobile ? 60 : 72,
+        right: isMobile ? 12 : 20,
+        left: isMobile ? 12 : 'auto',
         zIndex: 1000,
         background: 'white',
-        padding: '14px 20px',
+        padding: isMobile ? '12px 16px' : '14px 20px',
         borderRadius: 16,
         boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
         display: 'flex',
@@ -38,18 +42,19 @@ export default function RouteInfo({ routeData, loading, error, onClear }) {
     return (
       <div style={{
         position: 'absolute',
-        top: 20,
-        right: 20,
+        top: isMobile ? 60 : 72,
+        right: isMobile ? 12 : 20,
+        left: isMobile ? 12 : 'auto',
         zIndex: 1000,
         background: '#fef2f2',
         border: '1px solid #fecaca',
-        padding: '12px 18px',
+        padding: '12px 16px',
         borderRadius: 14,
         boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        maxWidth: 360,
+        maxWidth: isMobile ? 'none' : 360,
         fontFamily: "'Inter', system-ui, sans-serif",
       }}>
         <AlertCircle size={20} color="#dc2626" style={{ flexShrink: 0 }} />
@@ -89,14 +94,15 @@ export default function RouteInfo({ routeData, loading, error, onClear }) {
   return (
     <div style={{
       position: 'absolute',
-      top: 20,
-      right: 20,
+      top: isMobile ? 60 : 72,
+      right: isMobile ? 12 : 20,
+      left: isMobile ? 12 : 'auto',
       zIndex: 1000,
       background: 'white',
       borderRadius: 16,
       boxShadow: '0 10px 35px rgba(0,0,0,0.15)',
-      padding: '16px 20px',
-      minWidth: 260,
+      padding: isMobile ? '12px 16px' : '16px 20px',
+      minWidth: isMobile ? 0 : 260,
       fontFamily: "'Inter', system-ui, sans-serif",
       border: '1px solid #e5e7eb',
     }}>

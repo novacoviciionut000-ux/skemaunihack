@@ -3,6 +3,7 @@ import ProfilePicker from './ProfilePicker';
 import ReportButton from './ReportButton';
 import LocationInput from './LocationInput';
 import { MapPin, Flag, RotateCcw, ChevronUp, ChevronDown, Camera } from 'lucide-react';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 export default function Sidebar({
   profile,
@@ -18,8 +19,16 @@ export default function Sidebar({
   onRequestLocate,
   cameraOpen,
   onToggleCamera,
+  collapsed: controlledCollapsed,
+  onToggleCollapsed,
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const isMobile = useIsMobile();
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const collapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
+  const toggleCollapsed = () => {
+    if (onToggleCollapsed) onToggleCollapsed(!collapsed);
+    else setInternalCollapsed(!collapsed);
+  };
 
   return (
     <div style={{
@@ -42,32 +51,31 @@ export default function Sidebar({
         {/* Collapse toggle */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: -1 }}>
           <button
-            onClick={() => setCollapsed(!collapsed)}
+            onClick={toggleCollapsed}
             style={{
               background: 'white', border: '1px solid #e5e7eb', borderBottom: 'none',
-              borderRadius: '12px 12px 0 0', padding: '5px 24px', cursor: 'pointer',
+              borderRadius: '12px 12px 0 0', padding: isMobile ? '7px 20px' : '5px 24px', cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 6,
-              color: '#6b7280', fontSize: 13, fontWeight: 600,
-              boxShadow: '0 -2px 10px rgba(0,0,0,0.06)',
+              color: '#374151', fontSize: 13, fontWeight: 600,
+              boxShadow: '0 -2px 10px rgba(0,0,0,0.08)',
             }}
           >
             {collapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            {collapsed ? 'Show Route Planner' : 'Hide Controls'}
+            {collapsed ? (isMobile ? 'Planificator & Cameră' : 'Show Route Planner') : (isMobile ? 'Ascunde' : 'Hide Controls')}
           </button>
         </div>
 
         {/* Main panel */}
+        {!collapsed && (
         <div style={{
           background: 'white',
           border: '1px solid #e5e7eb',
           borderBottom: 'none',
           borderRadius: '20px 20px 0 0',
           boxShadow: '0 -8px 30px rgba(0,0,0,0.12)',
-          transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease',
-          transform: collapsed ? 'translateY(100%)' : 'translateY(0)',
-          opacity: collapsed ? 0 : 1,
-          padding: collapsed ? 0 : '18px 24px 28px',
-          overflow: 'visible',
+          padding: isMobile ? '14px 14px calc(16px + env(safe-area-inset-bottom, 0px))' : '18px 24px 28px',
+          maxHeight: isMobile ? '72dvh' : 'none',
+          overflowY: isMobile ? 'auto' : 'visible',
         }}>
           {/* Profile picker */}
           <ProfilePicker selected={profile} onSelect={onProfileChange} />
@@ -151,6 +159,7 @@ export default function Sidebar({
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );
