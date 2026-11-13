@@ -8,7 +8,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>3.3.5</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <relativePath/>
     </parent>
 
     <groupId>com.accessmap</groupId>
@@ -22,7 +22,7 @@
     </properties>
 
     <dependencies>
-        <!-- 1. Pentru crearea de Controller-e REST (API) și apeluri HTTP către GraphHopper -->
+        <!-- 1. Pentru crearea de Controller-e REST (API) și apeluri HTTP -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -47,7 +47,7 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
-        <!-- 5. Lombok - vă scutește de scris Getteri, Setteri și Constructori manual -->
+        <!-- 5. Lombok - scutește de scris Getteri, Setteri și Constructori manual -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
