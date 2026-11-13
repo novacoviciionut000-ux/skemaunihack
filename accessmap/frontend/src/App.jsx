@@ -8,6 +8,12 @@ import ProfileModal from './components/ProfileModal';
 import CameraObstacleDetector from './components/CameraObstacleDetector';
 import { useAuth } from './context/AuthContext';
 import { getRoute, getReports } from './api/client';
+import {
+  loadSavedDetours,
+  saveDetour,
+  findNearbyDetour,
+  emitDetourAvailableEvent,
+} from './utils/detourStore';
 
 export default function App() {
   const { user } = useAuth();
@@ -26,6 +32,8 @@ export default function App() {
   const [authModalMode, setAuthModalMode] = useState('login'); // 'login' | 'register'
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [savedDetours, setSavedDetours] = useState(() => loadSavedDetours());
+  const [nearbyDetour, setNearbyDetour] = useState(null);
 
   // Sincronizează profilul de deplasare când utilizatorul se autentifică
   useEffect(() => {
@@ -43,6 +51,38 @@ export default function App() {
   useEffect(() => {
     getReports().then(setObstacles).catch((err) => console.error('Failed to load reports:', err));
   }, []);
+
+  // Watch GPS continuously while camera is open so detours can be recorded & matched
+  useEffect(() => {
+    if (!cameraOpen || !navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setUserLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        });
+      },
+      (err) => console.warn('GPS watch warning:', err.message),
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [cameraOpen]);
+
+  // Check if user is approaching a previously recorded obstacle with a saved detour
+  useEffect(() => {
+    if (!userLocation) return;
+    const match = findNearbyDetour(userLocation, savedDetours, 30);
+    setNearbyDetour(match);
+    if (match) {
+      emitDetourAvailableEvent({
+        detour: match.detour,
+        distanceMeters: match.distanceMeters,
+        messageRo: `Atenție, obstacol raportat anterior la ${match.distanceMeters} metri. Urmează traseul de ocolire salvat.`,
+        timestamp: Date.now(),
+      });
+    }
+  }, [userLocation, savedDetours]);
 
   // Fetch route when both points are set
   useEffect(() => {
@@ -135,6 +175,8 @@ export default function App() {
         destination={destination}
         routeData={routeData}
         obstacles={obstacles}
+        savedDetours={savedDetours}
+        nearbyDetour={nearbyDetour}
         onMapClick={handleMapClick}
         onStartChange={setStart}
         onDestinationChange={setDestination}
@@ -189,6 +231,12 @@ export default function App() {
       <CameraObstacleDetector
         isOpen={cameraOpen}
         onClose={() => setCameraOpen(false)}
+        userLocation={userLocation}
+        nearbyDetour={nearbyDetour}
+        onDetourSaved={(newDetour) => {
+          const updated = saveDetour(newDetour);
+          setSavedDetours(updated);
+        }}
       />
 
       {/* Sidebar panel */}

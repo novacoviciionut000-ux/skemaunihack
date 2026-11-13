@@ -151,7 +151,6 @@ export default function ReportMarker({ report }) {
           </div>
 
           {/* Upvote & confirmation action */}
->>>>>>> 6059b81ad10eb27e1b796064fd72db25756fd2f9
           <div style={{
             display: 'flex',
             alignItems: 'center',

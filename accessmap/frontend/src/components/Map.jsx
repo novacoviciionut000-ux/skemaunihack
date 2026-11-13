@@ -187,6 +187,8 @@ export default function Map({
   destination,
   routeData,
   obstacles,
+  savedDetours = [],
+  nearbyDetour,
   onMapClick,
   onStartChange,
   onDestinationChange,
@@ -450,6 +452,48 @@ export default function Map({
             />
           </>
         )}
+
+        {/* Saved crowdsourced detour paths */}
+        {savedDetours && savedDetours.map((detour) => {
+          const isNearby = nearbyDetour?.detour?.id === detour.id;
+          return (
+            <React.Fragment key={detour.id}>
+              {detour.obstacleCoords && (
+                <Circle
+                  center={[detour.obstacleCoords.lat, detour.obstacleCoords.lng]}
+                  radius={5}
+                  pathOptions={{
+                    color: '#ef4444',
+                    fillColor: '#ef4444',
+                    fillOpacity: 0.25,
+                    weight: 2,
+                  }}
+                >
+                  <Popup>
+                    <strong>🚧 {detour.labelRo || 'Obstacol'} (ocolire salvată)</strong>
+                  </Popup>
+                </Circle>
+              )}
+              {detour.detourPath && detour.detourPath.length >= 2 && (
+                <Polyline
+                  positions={detour.detourPath}
+                  pathOptions={{
+                    color: isNearby ? '#10b981' : '#22c55e',
+                    weight: isNearby ? 6 : 4,
+                    opacity: isNearby ? 0.95 : 0.75,
+                    dashArray: '8, 8',
+                  }}
+                >
+                  <Popup>
+                    <strong>🔄 Traseu de ocolire salvat</strong>
+                    <br />
+                    <small>Evită: {detour.labelRo || 'Obstacol'}</small>
+                  </Popup>
+                </Polyline>
+              )}
+            </React.Fragment>
+          );
+        })}
 
         {/* Obstacle markers */}
         {obstacles && obstacles.map((obs) => (
