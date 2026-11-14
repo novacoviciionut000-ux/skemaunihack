@@ -785,9 +785,11 @@ export default function App() {
         followUser={followUser && isNavigating}
       />
 
-      {/* GPS health banner. Sits above everything because a frozen position makes the
-          whole navigation silently wrong, and nothing else on screen would show it.
-          Tappable: on iOS the permission prompt only appears inside a user gesture. */}
+      {/* GPS health banner. A frozen position makes the whole navigation silently wrong
+          and nothing else on screen would show it, so this sits above everything.
+          Placed at the bottom: the top strip belongs to the sign-in buttons, which this
+          used to cover, and the bottom is also easier to reach with a thumb.
+          Tappable, because on iOS the permission prompt only appears inside a gesture. */}
       {gpsStatus.state !== 'live' && gpsStatus.state !== 'unknown' && (
         <button
           type="button"
@@ -795,7 +797,7 @@ export default function App() {
           onClick={handleRequestGps}
           style={{
             position: 'absolute',
-            top: 8,
+            bottom: isMobile ? 104 : 96,
             left: 8,
             right: 8,
             zIndex: 2000,
@@ -818,12 +820,13 @@ export default function App() {
         </button>
       )}
 
-      {/* Live GPS readout while navigating, so a stalled fix is visible at a glance */}
+      {/* Live GPS readout while navigating, so a stalled fix is visible at a glance.
+          Same strip as the banner above, which it never shares the screen with. */}
       {isNavigating && gpsStatus.state === 'live' && (
         <div
           style={{
             position: 'absolute',
-            bottom: 8,
+            bottom: isMobile ? 104 : 96,
             left: 8,
             zIndex: 1990,
             padding: '4px 8px',

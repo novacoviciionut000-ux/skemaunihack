@@ -108,9 +108,77 @@ function getZone(centerX, frameWidth, prevZone = null) {
 
 // Continuous (unrounded) estimate. Rounding here would create 0.2-0.5 m steps
 // that look like movement when a bounding box merely jitters across a boundary.
-function estimateDistanceMeters(heightRatio) {
-  if (heightRatio <= 0.05) return 8.0;
-  return Math.max(0.4, Math.min(8.0, 1.15 / heightRatio));
+// Distance from apparent size, using a pinhole model and the real-world height of each
+// class. A single height for everything was the earlier approach and it misjudged badly:
+// a bench is 0.9 m and a bus is 3 m, so the same box size means very different distances.
+const VERTICAL_FOV_DEG = 62; // typical phone rear camera
+const FOV_SCALE = 2 * Math.tan((VERTICAL_FOV_DEG / 2) * (Math.PI / 180));
+
+const CLASS_HEIGHT_M = {
+  person: 1.7,
+  bicycle: 1.1,
+  motorcycle: 1.2,
+  car: 1.5,
+  bus: 3.0,
+  truck: 2.8,
+  'traffic light': 0.8,
+  'stop sign': 0.75,
+  'fire hydrant': 0.75,
+  'parking meter': 1.2,
+  bench: 0.9,
+  chair: 0.9,
+  couch: 0.8,
+  'dining table': 0.75,
+  'potted plant': 0.6,
+  suitcase: 0.7,
+  backpack: 0.5,
+  handbag: 0.35,
+  umbrella: 1.0,
+  dog: 0.55,
+  cat: 0.3,
+  door: 2.0,
+};
+const DEFAULT_HEIGHT_M = 1.2;
+// Shoulder width, used when a person's box is cut off by the bottom of the frame
+const PERSON_WIDTH_M = 0.5;
+// Tracking has to start well before the alert thresholds, otherwise closing speed is
+// still unknown when a vehicle arrives. A car at 5 m/s crosses 8 m in under two seconds.
+const MAX_DISTANCE_M = 15.0;
+
+/**
+ * Estimates distance in meters from the bounding box.
+ *
+ * Pixel scale is isotropic, so width and height can both be measured against the frame
+ * height. That matters for people: up close their legs leave the frame, the visible box
+ * is short, and a height-only estimate would place them further away than they are,
+ * which is exactly when an early warning counts.
+ */
+function estimateDistanceMeters(cls, width, height, boxBottom, frameHeight) {
+  const objectHeight = CLASS_HEIGHT_M[cls] ?? DEFAULT_HEIGHT_M;
+  const heightRatio = height / frameHeight;
+  if (heightRatio <= 0.005) return MAX_DISTANCE_M;
+
+  let distance = objectHeight / (FOV_SCALE * heightRatio);
+
+  const isClipped = boxBottom >= frameHeight - 2;
+  if (cls === 'person' && isClipped && width > 0) {
+    const fromWidth = PERSON_WIDTH_M / (FOV_SCALE * (width / frameHeight));
+    // Clipping can only inflate the height-based estimate, never shrink it
+    distance = Math.min(distance, fromWidth);
+  }
+
+  return Math.max(0.4, Math.min(MAX_DISTANCE_M, distance));
+}
+
+// Smoothing the distance has to follow a real approach without chasing box jitter, so the
+// weight adapts: gentle for small wobble, quick when the object is genuinely moving.
+// A fixed slow weight was the main reason alerts arrived late, lagging a fast approach
+// by more than two meters.
+function distanceAlpha(prevDistance, rawDistance) {
+  const change = Math.abs(rawDistance - prevDistance);
+  if (change < 0.3) return 0.35;
+  if (change < 0.8) return 0.6;
+  return 0.85;
 }
 
 // Quantize for voice/UI only (0.2 m under 2 m, 0.5 m above).
@@ -120,7 +188,7 @@ function formatDistance(meters) {
 
 // Approach tracking: speeds are measured over a window of at least this long,
 // so frame-to-frame bounding box noise cannot register as movement.
-const TREND_WINDOW_MS = 700;
+const TREND_WINDOW_MS = 400;
 
 // Telling pedestrian signals from car signals. COCO-SSD only knows one class,
 // "traffic light", so the two kinds are separated by the shape of the box: a car
@@ -154,6 +222,16 @@ const APPROACH_SPEED_MPS = 0.4; // closing faster than this counts as approachin
 const FAST_APPROACH_SPEED_MPS = 1.2; // "rapid" approach
 const RECEDE_SPEED_MPS = -0.3;
 const CENTERING_SHIFT_RATIO = 0.05; // lateral shift toward center, fraction of frame width
+
+// Alert thresholds. A blind user walking at ~1.2 m/s needs a few seconds to stop or step
+// aside, so warnings are given on both distance and time to impact, whichever comes first.
+const DANGER_DISTANCE_M = 2.5;
+const DANGER_TTC_S = 2.0;
+const WARN_DISTANCE_M = 6.0;
+const WARN_TTC_S = 4.5;
+// Half the width of the lane a walking person needs. An object whose nearest edge is
+// further than this to the side gets passed, not collided with.
+const WALKING_CORRIDOR_HALF_M = 0.6;
 
 function ema(prevVal, nextVal, alpha) {
   if (prevVal == null || Number.isNaN(prevVal)) return nextVal;
@@ -801,11 +879,14 @@ export function analyzeDetections(
       const isKnownHazard = HAZARDOUS_OBSTACLE_CLASSES.has(p.class);
       if (!isKnownHazard) return false;
 
-      // Ignore tiny distant cane-detectable items completely
+      // Ignore tiny distant cane-detectable items completely. The thresholds are low
+      // enough to start tracking a bollard or bench standing in the walking corridor
+      // while there is still time to stop; the threat rules below decide whether it is
+      // worth mentioning at all.
       if (CANE_DETECTABLE_CLASSES.has(p.class)) {
         const heightRatio = p.bbox[3] / frameHeight;
         const areaRatio = (p.bbox[2] * p.bbox[3]) / frameArea;
-        if (heightRatio < 0.24 && areaRatio < 0.08) return false;
+        if (heightRatio < 0.18 && areaRatio < 0.05) return false;
       }
       return true;
     })
@@ -837,16 +918,29 @@ export function analyzeDetections(
       const areaRatio = area / frameArea;
       const heightRatio = height / frameHeight;
       const zone = getZone(centerX, frameWidth, prev?.zone || null);
-      const inCenterPath =
-        x + width > frameWidth * 0.28 && x < frameWidth * 0.72;
 
       const labelRo = OBSTACLE_LABELS_RO[p.class] || p.class;
-      const rawDistance = estimateDistanceMeters(heightRatio);
+      const rawDistance = estimateDistanceMeters(p.class, width, height, y + height, frameHeight);
       const smoothedDistance = prev
-        ? ema(prev.rawDistance, rawDistance, 0.3)
+        ? ema(prev.rawDistance, rawDistance, distanceAlpha(prev.rawDistance, rawDistance))
         : rawDistance;
       const distanceMeters = formatDistance(smoothedDistance);
       const zoneRo = ZONE_LABELS_RO[zone];
+
+      // Whether the object stands in the walking corridor, measured in meters rather than
+      // in image space. A parked car beside the pavement is wide enough that its box
+      // covers the middle of the picture, and the old pixel-overlap test called that "in
+      // your path", so every parked vehicle raised an alert as the user walked past.
+      const pxPerMeter = frameHeight / (FOV_SCALE * smoothedDistance);
+      const lateralOffsetM = (centerX - frameWidth / 2) / pxPerMeter;
+      const objectWidthM = width / pxPerMeter;
+      const lateralGapM = Math.abs(lateralOffsetM) - objectWidthM / 2;
+      const coversFrameCenter = x < frameWidth / 2 && x + width > frameWidth / 2;
+      const inCenterPath =
+        lateralGapM <= WALKING_CORRIDOR_HALF_M ||
+        // Something filling the middle of the view from close up counts regardless of
+        // what the distance estimate says, because that estimate is least reliable there
+        (coversFrameCenter && smoothedDistance <= 2.5);
 
       // ─── Approach assessment ──────────────────────────────────────────────
       // Speed is measured against a reference sample at least TREND_WINDOW_MS old,
@@ -874,6 +968,10 @@ export function analyzeDetections(
       const isReceding = closingSpeed < RECEDE_SPEED_MPS;
       const isCentering = centeringShift > CENTERING_SHIFT_RATIO;
       const isGrowingArea = isApproaching;
+
+      // Seconds until contact at the current closing speed. Infinite when not closing.
+      const timeToImpact =
+        closingSpeed > 0.2 ? smoothedDistance / closingSpeed : Number.POSITIVE_INFINITY;
 
       let trafficLightState = null;
       let trafficLightHold = 0;
@@ -939,37 +1037,45 @@ export function analyzeDetections(
           severity = 'far';
         }
       } else if (HIGH_RISK_CLASSES.has(p.class) && !isReceding) {
+        // Time to collision is what decides how urgent something is. Distance alone
+        // treats a cyclist at 5 m the same as someone standing there, when one arrives
+        // in a second and the other not at all.
         if (inCenterPath) {
-          if (smoothedDistance <= 2.2) {
+          if (smoothedDistance <= DANGER_DISTANCE_M || timeToImpact <= DANGER_TTC_S) {
             isThreat = true;
             threatReason = isFastApproach ? 'Te apropii rapid' : isApproaching ? 'Te apropii' : 'În calea ta';
             severity = 'danger';
-          } else if (smoothedDistance <= 5.2 && isApproaching) {
+          } else if (smoothedDistance <= WARN_DISTANCE_M || timeToImpact <= WARN_TTC_S) {
             isThreat = true;
-            threatReason = 'Te apropii';
-            severity = smoothedDistance <= 3.2 ? 'danger' : 'approaching';
+            // A brand new box has no trend yet, so it is reported as being in the way
+            // rather than waiting most of a second to learn whether it is approaching
+            threatReason = isApproaching ? 'Te apropii' : 'În calea ta';
+            severity = 'approaching';
           }
         } else {
-          if (smoothedDistance <= 1.6 && isApproaching) {
-            isThreat = true;
-            threatReason = 'Obstacol lateral apropiat';
-            severity = 'approaching';
-          } else if (isCentering && isApproaching && smoothedDistance <= 4.0) {
+          // Out of the corridor: closing distance does not mean collision, because the
+          // user walks past. Only something drifting into the corridor, or already
+          // brushing it, is worth saying anything about.
+          if (isCentering && smoothedDistance <= 4.0) {
             isThreat = true;
             threatReason = 'Se îndreaptă spre calea ta';
+            severity = smoothedDistance <= 2.0 ? 'danger' : 'approaching';
+          } else if (lateralGapM <= 0.35 && smoothedDistance <= 1.5) {
+            isThreat = true;
+            threatReason = 'Obstacol lateral apropiat';
             severity = 'approaching';
           }
         }
       } else if (CANE_DETECTABLE_CLASSES.has(p.class) && !isReceding) {
-        // Only alert cane-detectable static objects if they are:
-        // 1) at chest/head height (overhanging, cane misses them), OR
-        // 2) large and directly blocking the center path
-        const isLargeBlocker = heightRatio >= 0.34 || areaRatio >= 0.14;
-        if (inCenterPath && isUpperBodyOrOverhang && smoothedDistance <= 3.5) {
+        // A cane finds ground clutter on its own, so these only matter when they are at
+        // body height, or big enough to block the way. No approach requirement: something
+        // standing in the path is just as solid whether or not it is moving.
+        const isLargeBlocker = heightRatio >= 0.2 || areaRatio >= 0.06;
+        if (inCenterPath && isUpperBodyOrOverhang && smoothedDistance <= 4.0) {
           isThreat = true;
           threatReason = 'Obstacol la nivelul capului';
-          severity = smoothedDistance <= 2.0 ? 'danger' : 'approaching';
-        } else if (inCenterPath && isLargeBlocker && smoothedDistance <= 3.5 && isApproaching) {
+          severity = smoothedDistance <= 2.5 ? 'danger' : 'approaching';
+        } else if (inCenterPath && isLargeBlocker && smoothedDistance <= 3.5) {
           isThreat = true;
           threatReason = 'Obstacol mare în față';
           severity = smoothedDistance <= 2.0 ? 'danger' : 'approaching';
