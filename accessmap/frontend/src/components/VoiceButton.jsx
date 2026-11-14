@@ -11,6 +11,15 @@ function isTextInput(el) {
   return Boolean(el?.closest?.('input, textarea, select, [contenteditable="true"]'));
 }
 
+// Double-tap means "listen to a voice command", which is wrong while a dialog is open:
+// there the user is filling in a form, and a stray double-tap on a label or on the
+// backdrop used to open the microphone in the middle of signing up. The whole gesture is
+// suspended while any dialog is on screen, the backdrop included.
+function isDialogOpen() {
+  if (typeof document === 'undefined') return false;
+  return Boolean(document.querySelector('[role="dialog"], [role="alertdialog"]'));
+}
+
 function spokenDistance(meters) {
   if (meters == null) return '';
   return meters >= 1000
@@ -187,7 +196,13 @@ export default function VoiceButton({
     };
 
     const onPointerUp = (e) => {
-      if (!e.isPrimary || !down || e.button > 0 || isTextInput(e.target)) {
+      if (
+        !e.isPrimary ||
+        !down ||
+        e.button > 0 ||
+        isTextInput(e.target) ||
+        isDialogOpen()
+      ) {
         lastTap = null;
         return;
       }
@@ -233,9 +248,10 @@ export default function VoiceButton({
         e.stopPropagation();
       }
     };
-    // Double-tap now means "voice command", so map double-click zoom must not fire too
+    // Double-tap now means "voice command", so map double-click zoom must not fire too.
+    // Inside a dialog the gesture is off, so native double-click behaviour is left alone.
     const blockDblClick = (e) => {
-      if (!isTextInput(e.target)) e.stopPropagation();
+      if (!isTextInput(e.target) && !isDialogOpen()) e.stopPropagation();
     };
 
     const opts = { capture: true };

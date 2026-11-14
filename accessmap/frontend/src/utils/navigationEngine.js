@@ -259,43 +259,43 @@ export function projectOnRoute(userPos, coordinates, prevIndex = 0) {
 
   const cosLat = Math.cos((user.lat * Math.PI) / 180);
   const lastSegment = coordinates.length - 2;
+
+  const searchRange = (from, to) => {
+    let found = null;
+    for (let i = from; i <= to; i++) {
+      const a = toLatLng(coordinates[i]);
+      const b = toLatLng(coordinates[i + 1]);
+      const proj = projectOnSegment(user, a, b, cosLat);
+      if (!found || proj.distance < found.distanceOffRoute) {
+        found = {
+          segmentIndex: i,
+          t: proj.t,
+          distanceOffRoute: proj.distance,
+          traveledOnSegment: proj.t * proj.segmentLength,
+          point: {
+            lat: a.lat + (b.lat - a.lat) * proj.t,
+            lng: a.lng + (b.lng - a.lng) * proj.t,
+          },
+        };
+      }
+    }
+    return found;
+  };
+
+  // Look just ahead of the last known position first. Scanning the whole polyline on
+  // every update was costing a pass over thousands of points several times a second,
+  // which is felt on a phone that is also running the camera model.
   const windowStart = Math.max(0, Math.min(lastSegment, prevIndex - 1));
   const windowEnd = Math.min(lastSegment, windowStart + FORWARD_SEARCH_SEGMENTS);
-
-  let best = null;
-  let bestInWindow = null;
-
-  for (let i = 0; i <= lastSegment; i++) {
-    const a = toLatLng(coordinates[i]);
-    const b = toLatLng(coordinates[i + 1]);
-    const proj = projectOnSegment(user, a, b, cosLat);
-    const candidate = {
-      segmentIndex: i,
-      t: proj.t,
-      distanceOffRoute: proj.distance,
-      traveledOnSegment: proj.t * proj.segmentLength,
-      point: {
-        lat: a.lat + (b.lat - a.lat) * proj.t,
-        lng: a.lng + (b.lng - a.lng) * proj.t,
-      },
-    };
-    if (!best || candidate.distanceOffRoute < best.distanceOffRoute) {
-      best = candidate;
-    }
-    if (
-      i >= windowStart &&
-      i <= windowEnd &&
-      (!bestInWindow || candidate.distanceOffRoute < bestInWindow.distanceOffRoute)
-    ) {
-      bestInWindow = candidate;
-    }
-  }
-
-  // Stay on the forward window unless the user is clearly nowhere near it anymore
+  const bestInWindow = searchRange(windowStart, windowEnd);
   if (bestInWindow && bestInWindow.distanceOffRoute <= FORWARD_SNAP_TOLERANCE_M) {
     return bestInWindow;
   }
-  return best;
+
+  // Clearly off the expected stretch: the user skipped ahead, doubled back, or left the
+  // route, so the whole polyline is worth searching.
+  const best = searchRange(0, lastSegment);
+  return best || bestInWindow;
 }
 
 /**

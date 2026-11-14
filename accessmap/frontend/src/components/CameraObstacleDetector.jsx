@@ -55,6 +55,9 @@ const SEVERITY_COLORS = {
 };
 
 const INFERENCE_INTERVAL_MS = 180;
+// Upper bound for the adaptive pacing below. Past this the warnings would be too sparse
+// to be useful, so a device this slow simply stays at the limit.
+const MAX_INFERENCE_INTERVAL_MS = 500;
 const ALERT_COOLDOWN_MS = 5500;
 const OBSTACLE_ID_REANNOUNCE_MS = 8500;
 // Same kind of obstacle on the same side is not repeated inside this window, however
@@ -108,6 +111,7 @@ export default function CameraObstacleDetector({
   const modelRef = useRef(null);
   const rafRef = useRef(null);
   const lastInferenceRef = useRef(0);
+  const inferenceIntervalRef = useRef(INFERENCE_INTERVAL_MS);
   const prevObstaclesRef = useRef([]);
   const prevSidewalkRef = useRef(null);
   const clearFramesRef = useRef(0);
@@ -802,7 +806,7 @@ export default function CameraObstacleDetector({
         !video ||
         video.readyState < 2 ||
         !modelRef.current ||
-        timestamp - lastInferenceRef.current < INFERENCE_INTERVAL_MS
+        timestamp - lastInferenceRef.current < inferenceIntervalRef.current
       ) {
         return;
       }
@@ -810,10 +814,20 @@ export default function CameraObstacleDetector({
       // Never run two inferences at once: a slow device would otherwise queue them up and stutter
       inferringRef.current = true;
       lastInferenceRef.current = timestamp;
+      const startedAt = performance.now();
       runInference(video)
         .catch((err) => console.warn('Obstacle detection frame error:', err))
         .finally(() => {
-          if (session === sessionRef.current) inferringRef.current = false;
+          if (session !== sessionRef.current) return;
+          // Pace the next run by how long this one took, so the model never occupies
+          // much more than half the main thread. On a weak phone a fixed interval meant
+          // inferences ran back to back and the interface stopped responding.
+          const took = performance.now() - startedAt;
+          inferenceIntervalRef.current = Math.min(
+            MAX_INFERENCE_INTERVAL_MS,
+            Math.max(INFERENCE_INTERVAL_MS, took * 1.2)
+          );
+          inferringRef.current = false;
         });
     };
 

@@ -14,12 +14,15 @@ import {
   ArrowRight,
   Sparkles,
   ChevronRight,
-  Settings,
   ExternalLink,
   Smartphone
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authGetOAuthConfig } from '../api/client';
+
+// How long to wait for Google to insert its sign-in button before concluding that the
+// address was rejected. It renders asynchronously, usually well inside this window.
+const GOOGLE_BUTTON_GRACE_MS = 2500;
 
 export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAuthSuccess }) {
   const { login, register, loginWithOAuth, checkUsername } = useAuth();
@@ -40,16 +43,15 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
 
   // Stări Google Identity Services & OAuth
   const [googleClientId, setGoogleClientId] = useState(() => {
-    return localStorage.getItem('accessmap_google_client_id') ||
-      import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-      '';
+    return import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
   });
+  // Whether the server has a real Google client ID, which decides if Google sign-in is
+  // offered at all
   const [googleConfigured, setGoogleConfigured] = useState(false);
-  const [showGoogleConfig, setShowGoogleConfig] = useState(false);
-  const [customClientIdInput, setCustomClientIdInput] = useState('');
-  const [googleSdkReady, setGoogleSdkReady] = useState(false);
   // True once Google's official button is drawn; then our fallback button is hidden
   const [officialGoogleButton, setOfficialGoogleButton] = useState(false);
+  // Holds the current address when Google refuses it as an unregistered origin
+  const [googleOriginProblem, setGoogleOriginProblem] = useState(null);
 
   // Stare email și confirmare
   const [mailStatus, setMailStatus] = useState({ configured: false, deliveryMode: 'NONE' });
@@ -58,10 +60,29 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState(null); // 'google' | 'facebook' | null
   const [error, setError] = useState(null);
+  // Errors are also raised as a dialog on top of the form. The inline notice sits at the
+  // top of a long modal while the submit button is at the bottom, so pressing "create
+  // account" with a bad password looked like nothing happened at all.
+  const [errorPopup, setErrorPopup] = useState(null);
+  const errorPopupButtonRef = useRef(null);
   const [success, setSuccess] = useState(null);
   const [emailSentInfo, setEmailSentInfo] = useState(null);
 
   const googleButtonRef = useRef(null);
+  // Move focus onto the error dialog so a screen reader reads it out, and let Escape
+  // dismiss it without touching the form behind.
+  useEffect(() => {
+    if (!errorPopup) return;
+    errorPopupButtonRef.current?.focus();
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setErrorPopup(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [errorPopup]);
 
   // 1. Încărcare setări OAuth și configurare de la backend
   useEffect(() => {
@@ -69,10 +90,17 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
     authGetOAuthConfig().then((cfg) => {
       if (!active || !cfg) return;
       const bClientId = cfg.googleClientId;
-      if (bClientId && bClientId !== 'mock-google-client-id' && !localStorage.getItem('accessmap_google_client_id')) {
+      const backendHasRealId = bClientId && bClientId !== 'mock-google-client-id';
+
+      // The backend is the source of truth: it is the side that verifies the token with
+      // Google, so a client ID that disagrees with it can never produce a working login.
+      // An override typed into the panel that used to live here won forever and broke
+      // sign-in with no way to find out why, so a leftover one is cleared.
+      localStorage.removeItem('accessmap_google_client_id');
+      if (backendHasRealId) {
         setGoogleClientId(bClientId);
       }
-      setGoogleConfigured(cfg.googleConfigured || Boolean(localStorage.getItem('accessmap_google_client_id')));
+      setGoogleConfigured(backendHasRealId);
       setMailStatus({
         configured: cfg.mailConfigured || false,
         deliveryMode: cfg.mailDeliveryMode || 'LOCAL_DEV_LOG'
@@ -86,14 +114,19 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
     if (!isOpen) return;
 
     let checkInterval = null;
+    let observer = null;
+    let graceTimer = null;
+    let buttonDrawn = false;
     const effectiveClientId = googleClientId || 'mock-google-client-id';
+
+    // Start from a clean slate: a warning left over from an earlier client ID or from a
+    // previous time the dialog was opened must not survive into this attempt.
+    setGoogleOriginProblem(null);
 
     const setupGoogleId = () => {
       if (typeof window === 'undefined' || !window.google?.accounts?.id) {
         return false;
       }
-
-      setGoogleSdkReady(true);
 
       try {
         // Inițializare Google Identity Services cu handler oficial
@@ -108,8 +141,9 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
 
         // 1. Randare buton oficial Google Sign-In dacă este configurat Client ID-ul
         if (googleButtonRef.current && effectiveClientId !== 'mock-google-client-id') {
-          googleButtonRef.current.innerHTML = '';
-          window.google.accounts.id.renderButton(googleButtonRef.current, {
+          const container = googleButtonRef.current;
+          container.innerHTML = '';
+          window.google.accounts.id.renderButton(container, {
             type: 'standard',
             shape: 'pill',
             theme: 'outline',
@@ -118,14 +152,54 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
             logo_alignment: 'left',
             width: 380,
           });
-          setOfficialGoogleButton(googleButtonRef.current.childElementCount > 0);
+
+          // Google inserts its button asynchronously, so the container is still empty on
+          // the very next line. Reading the count straight away reported a failure every
+          // single time and showed the warning below even when sign-in worked, so the
+          // container is watched for a moment instead.
+          const markDrawn = () => {
+            buttonDrawn = true;
+            setOfficialGoogleButton(true);
+            setGoogleOriginProblem(null);
+          };
+
+          if (container.childElementCount > 0) {
+            markDrawn();
+          } else {
+            observer = new MutationObserver(() => {
+              if (container.childElementCount > 0) {
+                observer.disconnect();
+                clearTimeout(graceTimer);
+                markDrawn();
+              }
+            });
+            observer.observe(container, { childList: true, subtree: true });
+            graceTimer = setTimeout(() => {
+              observer?.disconnect();
+              if (container.childElementCount > 0) {
+                markDrawn();
+                return;
+              }
+              // Nothing appeared: Google refuses addresses that are not registered as an
+              // authorised JavaScript origin, and says nothing about it. That is why
+              // sign-in works on localhost but not from a phone or a tunnel URL.
+              setOfficialGoogleButton(false);
+              setGoogleOriginProblem(window.location.origin);
+            }, GOOGLE_BUTTON_GRACE_MS);
+          }
         }
 
         // 2. Afișare One Tap (arată automat conturile Google de pe telefon / browser)
         if (effectiveClientId !== 'mock-google-client-id') {
           window.google.accounts.id.prompt((notification) => {
             if (notification.isNotDisplayed()) {
-              console.log('Google One Tap notification:', notification.getNotDisplayedReason());
+              const reason = notification.getNotDisplayedReason();
+              console.log('Google One Tap notification:', reason);
+              // Only these two mean the address is rejected. The rest ("no session",
+              // "opted out", "suppressed") are normal and say nothing about the setup.
+              if (!buttonDrawn && (reason === 'invalid_client' || reason === 'unregistered_origin')) {
+                setGoogleOriginProblem(window.location.origin);
+              }
             }
           });
         }
@@ -147,6 +221,8 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
 
     return () => {
       if (checkInterval) clearInterval(checkInterval);
+      if (graceTimer) clearTimeout(graceTimer);
+      if (observer) observer.disconnect();
     };
   }, [isOpen, googleClientId]);
 
@@ -230,7 +306,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
 
     // Dacă utilizatorul nu a configurat încă un Google Client ID real, îi oferim fereastra rapidă de setare
     if (!googleClientId || googleClientId === 'mock-google-client-id') {
-      setShowGoogleConfig(true);
+      setError('Conectarea cu Google nu este configurată pe server. Folosește email și parolă.');
       return;
     }
 
@@ -299,21 +375,6 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
       setSocialLoading(null);
       setError(popupErr.message || 'Nu s-a putut deschide fereastra Google Sign-In.');
     }
-  };
-
-  // Salvare Google Client ID personalizat din UI
-  const handleSaveGoogleClientId = (e) => {
-    e.preventDefault();
-    const clean = customClientIdInput.trim();
-    if (!clean) {
-      setError('Te rugăm să introduci un Google Client ID valid.');
-      return;
-    }
-    localStorage.setItem('accessmap_google_client_id', clean);
-    setGoogleClientId(clean);
-    setGoogleConfigured(true);
-    setShowGoogleConfig(false);
-    setSuccess('Google Client ID configurat cu succes! Conectarea cu Google este acum activă.');
   };
 
   // Verificare unicitate username în timp real pe măsură ce utilizatorul tastează (debounced)
@@ -391,11 +452,13 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setErrorPopup(null);
     setSuccess(null);
     setEmailSentInfo(null);
 
     if (mode === 'register' && usernameStatus === 'taken') {
       setError('Numele de utilizator ales este deja folosit. Te rugăm să alegi altul.');
+      setErrorPopup('Numele de utilizator ales este deja folosit. Te rugăm să alegi altul.');
       return;
     }
 
@@ -449,7 +512,9 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
       }
     } catch (err) {
       console.error('Auth error:', err);
-      setError(err.message || 'A apărut o problemă la autentificare.');
+      const message = err.message || 'A apărut o problemă la autentificare.';
+      setError(message);
+      setErrorPopup(message);
     } finally {
       setLoading(false);
     }
@@ -474,7 +539,81 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
         if (e.target === e.currentTarget) onClose();
       }}
     >
+      {/* Error dialog. Shown on top of the form so a rejected password cannot be missed,
+          and announced to screen readers through role="alertdialog". */}
+      {errorPopup && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10001,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setErrorPopup(null);
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Eroare"
+            style={{
+              width: '100%',
+              maxWidth: 380,
+              background: '#ffffff',
+              borderRadius: 18,
+              padding: '20px 22px',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
+              fontFamily: "'Inter', system-ui, sans-serif",
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                color: '#b91c1c',
+                fontWeight: 800,
+                fontSize: 15,
+                marginBottom: 8,
+              }}
+            >
+              <AlertCircle size={20} style={{ flexShrink: 0 }} />
+              <span>Nu am putut continua</span>
+            </div>
+            <p style={{ margin: '0 0 16px', color: '#334155', fontSize: 13.5, lineHeight: 1.5 }}>
+              {errorPopup}
+            </p>
+            <button
+              ref={errorPopupButtonRef}
+              type="button"
+              onClick={() => setErrorPopup(null)}
+              style={{
+                width: '100%',
+                padding: '11px 16px',
+                borderRadius: 10,
+                border: 'none',
+                background: '#2563eb',
+                color: '#ffffff',
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: 'pointer',
+                minHeight: 44,
+              }}
+            >
+              Am înțeles
+            </button>
+          </div>
+        </div>
+      )}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={mode === 'login' ? 'Conectare în cont' : 'Creare cont nou'}
         style={{
           width: '100%',
           maxWidth: 480,
@@ -575,105 +714,11 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
             )}
           </div>
 
-          {/* Panou Configurare Google OAuth (când utilizatorul dorește să seteze Client ID-ul oficial) */}
-          {showGoogleConfig ? (
-            <div style={{
-              marginTop: 10,
-              padding: '16px',
-              backgroundColor: '#f8fafc',
-              border: '1.5px solid #e2e8f0',
-              borderRadius: 16,
-              marginBottom: 16
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Settings size={18} color="#2563eb" />
-                  <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
-                    Configurare Google Sign-In Real
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowGoogleConfig(false)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              <p style={{ margin: '0 0 12px', fontSize: 12.5, color: '#475569', lineHeight: 1.5 }}>
-                Pentru ca Google să verifice direct dacă conturile există și să sugereze conturile pe care le ai deja pe telefon sau calculator, introdu <strong>Google Client ID</strong> din Google Cloud Console:
-              </p>
-
-              <form onSubmit={handleSaveGoogleClientId} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>
-                    Google OAuth 2.0 Web Client ID
-                  </label>
-                  <input
-                    type="text"
-                    value={customClientIdInput}
-                    onChange={(e) => setCustomClientIdInput(e.target.value)}
-                    placeholder="ex: 123456789-abcdef.apps.googleusercontent.com"
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: 10,
-                      border: '1.5px solid #cbd5e1',
-                      fontSize: 12.5,
-                      fontFamily: 'monospace',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    type="submit"
-                    style={{
-                      flex: 1,
-                      padding: '9px 14px',
-                      backgroundColor: '#2563eb',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: 10,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Salvează & Activează Google
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowGoogleConfig(false)}
-                    style={{
-                      padding: '9px 14px',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: 10,
-                      fontSize: 13,
-                      color: '#475569',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Anulează
-                  </button>
-                </div>
-
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 4, lineHeight: 1.4 }}>
-                  💡 <em>Origini permise în Google Console:</em> <code>http://localhost:3000</code> și <code>http://localhost</code>.
-                </div>
-              </form>
-            </div>
-          ) : null}
-
           {/* Secțiune Conectare Reală cu Google */}
           <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
               fontSize: 12,
               fontWeight: 600,
               color: '#475569'
@@ -682,29 +727,6 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 <Sparkles size={14} color="#ea4335" />
                 <span>Autentificare Oficială Google</span>
               </span>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setCustomClientIdInput(googleClientId || '');
-                  setShowGoogleConfig(!showGoogleConfig);
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#2563eb',
-                  fontSize: 11.5,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '2px 6px',
-                  borderRadius: 6
-                }}
-              >
-                <Settings size={12} />
-                <span>{googleConfigured ? 'Client ID activ' : 'Configurează Client ID'}</span>
-              </button>
             </div>
 
             {/* Container Buton Oficial Google Identity Services */}
@@ -717,6 +739,28 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 minHeight: officialGoogleButton ? 42 : 0,
               }}
             />
+
+            {/* Google rejected this address, which it does not announce anywhere */}
+            {googleOriginProblem && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: '#fef3c7',
+                  border: '1px solid #fcd34d',
+                  color: '#78350f',
+                  fontSize: 11.5,
+                  lineHeight: 1.5,
+                }}
+              >
+                Google nu acceptă adresa de pe care rulează aplicația. Adaugă exact{' '}
+                <code style={{ fontWeight: 700, wordBreak: 'break-all' }}>{googleOriginProblem}</code>{' '}
+                la <strong>Authorized JavaScript origins</strong> în Google Cloud Console, la
+                același Client ID, apoi reîncarcă pagina. Conectarea cu email și parolă
+                funcționează între timp.
+              </div>
+            )}
 
             {/* Fallback only if Google's official button couldn't be drawn (SDK blocked or not configured) */}
             {!officialGoogleButton && (

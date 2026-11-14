@@ -1,6 +1,3 @@
-import * as tf from '@tensorflow/tfjs';
-import * as cocoSsd from '@tensorflow-models/coco-ssd';
-
 let modelPromise = null;
 let offscreenCanvas = null;
 let offscreenCtx = null;
@@ -27,10 +24,19 @@ function getLightCropContext(width, height) {
 /**
  * Loads and caches the COCO-SSD model once for the browser session.
  * Uses lite_mobilenet_v2 for fast real-time inference on mobile and desktop.
+ *
+ * TensorFlow and the model are pulled in dynamically, not at module load. Imported
+ * statically they landed in the main bundle, so every visit downloaded and parsed about
+ * two megabytes of machine-learning runtime before the map could appear, even for
+ * someone who never opens the camera.
  */
 export async function loadObstacleModel() {
   if (!modelPromise) {
     modelPromise = (async () => {
+      const [tf, cocoSsd] = await Promise.all([
+        import('@tensorflow/tfjs'),
+        import('@tensorflow-models/coco-ssd'),
+      ]);
       await tf.ready();
       return cocoSsd.load({ base: 'lite_mobilenet_v2' });
     })();

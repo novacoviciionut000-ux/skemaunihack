@@ -98,6 +98,9 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
       }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Setări profil"
         style={{
           width: '100%',
           maxWidth: 480,

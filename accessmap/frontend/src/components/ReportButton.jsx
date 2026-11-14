@@ -204,6 +204,9 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
           onClick={() => setShowModal(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Raportează un obstacol"
             onClick={(e) => e.stopPropagation()}
             style={{
               background: 'white',
