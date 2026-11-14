@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useVoiceAssistant } from '../hooks/useVoiceAssistant';
 import { findClosestPlace, formatDistance } from '../api/client';
 import { speechQueue, playListenBeep, unlockAudioContext } from '../utils/speechQueue';
+import { useAuth } from '../context/AuthContext';
+import { VOICE_LISTEN_EVENT } from '../utils/helpVoiceBridge';
 
 const DOUBLE_TAP_MS = 350;
 const DOUBLE_TAP_SLOP_PX = 40; // max distance between the two taps
@@ -40,6 +42,7 @@ export default function VoiceButton({
   const [statusMessage, setStatusMessage] = useState('');
   const [statusType, setStatusType] = useState('info'); // 'info' | 'success' | 'error'
   const [alwaysOn, setAlwaysOn] = useState(false);
+  const { user } = useAuth();
 
   // ── Destinație vocală: cea mai apropiată potrivire, ruta pornește imediat ──
   const lookupIdRef = useRef(0);
@@ -139,6 +142,7 @@ export default function VoiceButton({
     },
     onStatusQuery: handleStatusQuery,
     alwaysOn: false, // controlăm manual din UI
+    isClient: Boolean(user && user.accountType !== 'VOLUNTEER'),
   });
 
   // Afișăm erorile hook-ului
@@ -185,6 +189,23 @@ export default function VoiceButton({
   // ── Atingere dublă oriunde pe ecran → pornește recunoașterea vocală ─────
   const voiceStateRef = useRef({});
   voiceStateRef.current = { isListening, alwaysOn, startListening };
+
+  // ── Întrebare pusă de aplicație (ex: „A fost rezolvat?”) → deschide microfonul ──
+  useEffect(() => {
+    const onListen = (e) => {
+      const { isListening: listening, alwaysOn: on, startListening: start } = voiceStateRef.current;
+      if (on) return; // microfonul permanent ascultă deja
+      if (listening) return;
+      playListenBeep();
+      if (navigator.vibrate) navigator.vibrate(40);
+      setStatusMessage(e.detail?.prompt || 'Ascult... spune comanda');
+      setStatusType('info');
+      start();
+    };
+    window.addEventListener(VOICE_LISTEN_EVENT, onListen);
+    return () => window.removeEventListener(VOICE_LISTEN_EVENT, onListen);
+  }, []);
+
 
   useEffect(() => {
     let down = null; // pointerdown position, to tell taps from drags
@@ -427,8 +448,8 @@ export default function VoiceButton({
           Atinge de două ori oriunde pentru comenzi vocale.
           <br />
           &ldquo;Du-mă la Kaufland&rdquo;
+          {' · '}&ldquo;Am nevoie de ajutor&rdquo;
           {' · '}&ldquo;Deschide camera&rdquo;
-          {' · '}&ldquo;112&rdquo;
         </p>
       )}
 

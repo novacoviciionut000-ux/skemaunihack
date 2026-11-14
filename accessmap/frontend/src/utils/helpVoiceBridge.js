@@ -1,13 +1,13 @@
 /**
- * Lets the main voice assistant (double tap anywhere) answer the help system's question
- * "was the deed really done?". While a question is pending, "da" / "nu" go to it.
+ * Connects the help system (HelpCenter) with the main voice assistant (VoiceButton +
+ * useVoiceAssistant), so every help action also works by voice.
  */
-let pending = null;
+let pending = null; // { onAnswer(yes), onUnclear() }
 
 export const helpConfirmBridge = {
-  /** @param {(yes: boolean) => void} handler */
-  ask(handler) {
-    pending = handler;
+  /** The app asked "was the deed really done?" and waits for "da" / "nu". */
+  ask(onAnswer, { onUnclear } = {}) {
+    pending = { onAnswer, onUnclear };
   },
   clear() {
     pending = null;
@@ -16,9 +16,13 @@ export const helpConfirmBridge = {
     return pending !== null;
   },
   answer(yes) {
-    const handler = pending;
+    const p = pending;
     pending = null;
-    if (handler) handler(yes);
+    if (p) p.onAnswer(yes);
+  },
+  /** Heard something, but not "da" or "nu". */
+  unclear() {
+    if (pending && pending.onUnclear) pending.onUnclear();
   },
 };
 
@@ -27,4 +31,14 @@ export const HELP_COMMAND_EVENT = 'accessmap:help-command';
 
 export function emitHelpCommand(type) {
   window.dispatchEvent(new CustomEvent(HELP_COMMAND_EVENT, { detail: { type } }));
+}
+
+/**
+ * Opens the microphone with the normal listening popup, as if the user had double tapped.
+ * Used right after the app asks a question.
+ */
+export const VOICE_LISTEN_EVENT = 'accessmap:voice-listen';
+
+export function requestVoiceListen(prompt) {
+  window.dispatchEvent(new CustomEvent(VOICE_LISTEN_EVENT, { detail: { prompt } }));
 }

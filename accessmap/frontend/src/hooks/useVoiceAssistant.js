@@ -19,6 +19,7 @@ export function useVoiceAssistant({
   onConfirmYes,
   onConfirmNo,
   alwaysOn = false,          // dacă true, pornește microfonul automat și îl ține activ
+  isClient = false,          // client logat: „ajutor” cheamă un voluntar în loc de 112
 }) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -33,6 +34,9 @@ export function useVoiceAssistant({
   useEffect(() => {
     awaitingConfirmRef.current = awaitingConfirmation;
   }, [awaitingConfirmation]);
+
+  const isClientRef = useRef(isClient);
+  isClientRef.current = isClient;
 
   // ─── TTS secvențial prin speechQueue ────────────────────────────────────
   const speak = useCallback((text, options = {}) => {
@@ -61,7 +65,16 @@ export function useVoiceAssistant({
     const list = Array.isArray(alternatives) ? alternatives : [alternatives];
     // The help system may be waiting for "da" / "nu" (was the deed really done?)
     const helpAwaiting = helpConfirmBridge.isAwaiting();
-    const cmd = pickBestCommand(list, { awaitingConfirmation: awaitingConfirmRef.current || helpAwaiting });
+    const cmd = pickBestCommand(list, {
+      awaitingConfirmation: awaitingConfirmRef.current || helpAwaiting,
+      isClient: isClientRef.current,
+    });
+
+    // Waiting for "da" / "nu": anything else asks again instead of running another command
+    if (helpAwaiting && cmd.type !== 'confirm-yes' && cmd.type !== 'confirm-no') {
+      helpConfirmBridge.unclear();
+      return;
+    }
 
     switch (cmd.type) {
       case 'confirm-yes':
@@ -74,7 +87,13 @@ export function useVoiceAssistant({
         return;
       case 'call-volunteer':
       case 'cancel-help':
+      case 'help-status':
       case 'deed-finished':
+      case 'accept-help':
+      case 'release-help':
+      case 'duty-on':
+      case 'duty-off':
+      case 'my-points':
         emitHelpCommand(cmd.type);
         return;
       case 'emergency':
