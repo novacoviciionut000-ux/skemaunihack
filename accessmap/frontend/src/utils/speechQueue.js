@@ -8,6 +8,9 @@
  * - Utterances are chained with onend (no timers per speak), with a watchdog for
  *   engines that drop onend (mobile Safari, Chrome after long utterances).
  * - Alarm beeps use Web Audio and play concurrently; they bypass the queue.
+ * - iOS Safari: speechSynthesis is often muted while the camera is active, so speech is
+ *   played through an unlocked <audio> element backed by /api/v1/tts, falling back to
+ *   speechSynthesis if that fails.
  */
 
 const PRIORITY_WEIGHT = { danger: 4, urgent: 3, high: 2, normal: 1 };
@@ -15,8 +18,17 @@ const PRIORITY_WEIGHT = { danger: 4, urgent: 3, high: 2, normal: 1 };
 const TTL_MS = 4_000;
 const MAX_QUEUE = 3;
 const REPEAT_COOLDOWN_MS = 2_500;
-const CANCEL_SETTLE_MS = 60; // speak() right after cancel() is dropped by iOS Safari and Chrome
+const CANCEL_SETTLE_MS = IS_IOS ? 160 : 60; // speak() right after cancel() is dropped by iOS Safari and Chrome
 const DEFAULT_LANG = 'ro-RO';
+
+const IS_IOS =
+  typeof navigator !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+// Tiny silent WAV; playing it inside a gesture permanently unlocks audio.play() on iOS
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
 
 const hasSpeech = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
 
@@ -93,6 +105,8 @@ class SpeechQueueManager {
     this.voices = [];
     this._voiceCache = new Map(); // lang prefix -> SpeechSynthesisVoice | null
     this._unlocked = false;
+    this._audioEl = null; // <audio> used for server TTS on iOS
+    this._audioUnlocked = false;
     this._token = 0;
     this._watchdog = null;
     this._settleTimer = null;
@@ -113,14 +127,16 @@ class SpeechQueueManager {
       window.addEventListener('pagehide', () => this.cancel());
     }
 
+    // iOS Safari ignores touchstart for speechSynthesis; touchend/click count as activation.
+    const events = ['touchend', 'click', 'keydown'];
     const unlockOnce = () => {
       this.unlock();
       unlockAudioContext();
-      ['touchstart', 'click', 'keydown'].forEach((evt) =>
-        window.removeEventListener(evt, unlockOnce, { capture: true })
-      );
+      if (this._unlocked) {
+        events.forEach((evt) => window.removeEventListener(evt, unlockOnce, { capture: true }));
+      }
     };
-    ['touchstart', 'click', 'keydown'].forEach((evt) =>
+    events.forEach((evt) =>
       window.addEventListener(evt, unlockOnce, { capture: true, passive: true })
     );
   }
@@ -157,17 +173,49 @@ class SpeechQueueManager {
     return this.getVoice(DEFAULT_LANG);
   }
 
-  /** Open the audio channel on iOS/Android with a silent utterance. Safe to call repeatedly. */
-  unlock() {
-    if (this._unlocked || !hasSpeech()) return;
-    this._unlocked = true;
+  _getAudioElement() {
+    if (!this._audioEl && typeof Audio !== 'undefined') {
+      this._audioEl = new Audio();
+      this._audioEl.preload = 'auto';
+      this._audioEl.playsInline = true;
+    }
+    return this._audioEl;
+  }
+
+  /**
+   * Open the audio channels (HTMLAudio + speechSynthesis). Must run inside a user gesture.
+   * @param {boolean} [force=false] redo the unlock even if it already succeeded
+   */
+  unlock(force = false) {
+    if (typeof window === 'undefined') return;
+
+    if (!this._audioUnlocked || force) {
+      try {
+        const audio = this._getAudioElement();
+        if (audio && audio.paused) {
+          audio.src = SILENT_WAV;
+          const played = audio.play();
+          if (played && typeof played.then === 'function') {
+            played.then(() => (this._audioUnlocked = true)).catch(() => {});
+          } else {
+            this._audioUnlocked = true;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if ((this._unlocked && !force) || !hasSpeech()) return;
     try {
-      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-      const silent = new SpeechSynthesisUtterance('\u200B');
-      silent.volume = 0;
-      silent.rate = 10;
-      silent.lang = DEFAULT_LANG;
-      window.speechSynthesis.speak(silent);
+      window.speechSynthesis.resume();
+      if (!window.speechSynthesis.speaking) {
+        const silent = new SpeechSynthesisUtterance('');
+        silent.volume = 0;
+        silent.lang = DEFAULT_LANG;
+        window.speechSynthesis.speak(silent);
+      }
+      this._unlocked = true;
     } catch {
       /* ignore */
     }
@@ -289,14 +337,18 @@ class SpeechQueueManager {
 
     const utterance = new SpeechSynthesisUtterance(item.text);
     utterance.lang = item.lang;
-    utterance.rate = item.rate;
+    utterance.rate = IS_IOS ? Math.min(item.rate, 1.05) : item.rate;
     utterance.pitch = item.pitch;
     const voice = this.getVoice(item.lang);
-    if (voice) utterance.voice = voice;
+    // On iOS, remote voices can fail silently; let the system pick unless the voice is local
+    if (voice && (!IS_IOS || voice.localService !== false)) utterance.voice = voice;
 
     // Ignore callbacks from utterances that were cancelled or replaced
+    let started = false;
+    let nudgeTimer = null;
     const finish = () => {
       if (!this.current || this.current.token !== token) return;
+      clearTimeout(nudgeTimer);
       clearTimeout(this._watchdog);
       this._watchdog = null;
       this.current = null;
@@ -308,31 +360,95 @@ class SpeechQueueManager {
       this._processQueue();
     };
 
-    utterance.onend = finish;
-    utterance.onerror = (e) => {
-      if (e.error !== 'interrupted' && e.error !== 'canceled') {
-        console.warn('[SpeechQueue] error:', e.error, item.text.slice(0, 40));
-      }
-      finish();
-    };
-
     // If onend never fires, stop the engine so it cannot talk over the next item
     clearTimeout(this._watchdog);
     this._watchdog = setTimeout(() => {
-      try {
-        synth.cancel();
-      } catch {
-        /* ignore */
-      }
+      this._silence();
       finish();
     }, Math.max(4500, item.text.length * 130));
 
-    try {
-      if (synth.paused) synth.resume();
-      synth.speak(utterance);
-    } catch (err) {
-      console.warn('[SpeechQueue] speak() threw:', err);
+    // iOS may suspend speechSynthesis without setting paused; nudge if nothing started
+    nudgeTimer = setTimeout(() => {
+      if (!started) {
+        try {
+          synth.resume();
+        } catch {
+          /* ignore */
+        }
+      }
+    }, 750);
+
+    const speakViaWebSpeech = () => {
+      utterance.onstart = () => {
+        started = true;
+      };
+      utterance.onend = finish;
+      utterance.onerror = (e) => {
+        if (e.error !== 'interrupted' && e.error !== 'canceled') {
+          console.warn('[SpeechQueue] error:', e.error, item.text.slice(0, 40));
+        }
+        finish();
+      };
+      try {
+        synth.resume();
+        synth.speak(utterance);
+      } catch (err) {
+        console.warn('[SpeechQueue] speak() threw:', err);
+        finish();
+      }
+    };
+
+    const audio = IS_IOS ? this._getAudioElement() : null;
+    if (!audio) {
+      speakViaWebSpeech();
+      return;
+    }
+
+    // iOS: server-backed TTS through the unlocked <audio> element, speechSynthesis as fallback
+    let fellBack = false;
+    const fallback = () => {
+      if (fellBack || this.current?.token !== token) return;
+      fellBack = true;
+      audio.onended = null;
+      audio.onerror = null;
+      speakViaWebSpeech();
+    };
+    const langCode = (item.lang || 'ro').slice(0, 2).toLowerCase();
+    audio.onended = () => {
+      started = true;
       finish();
+    };
+    audio.onerror = fallback;
+    audio.onplaying = () => {
+      started = true;
+    };
+    audio.src = `/api/v1/tts?lang=${encodeURIComponent(langCode)}&text=${encodeURIComponent(item.text)}`;
+    audio.playbackRate = Math.min(item.rate, 1.15);
+    try {
+      audio.play()?.catch(fallback);
+    } catch {
+      fallback();
+    }
+  }
+
+  /** Halt any audio output (speechSynthesis and the iOS <audio> element). */
+  _silence() {
+    if (this._audioEl) {
+      try {
+        this._audioEl.onended = null;
+        this._audioEl.onerror = null;
+        this._audioEl.onplaying = null;
+        this._audioEl.pause();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (hasSpeech()) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -343,11 +459,7 @@ class SpeechQueueManager {
     clearTimeout(this._watchdog);
     this._watchdog = null;
     this.current = null; // invalidates the token, so its onend/onerror are ignored
-    try {
-      window.speechSynthesis.cancel();
-    } catch {
-      /* ignore */
-    }
+    this._silence();
     cur.item.onEnd?.();
   }
 
@@ -357,13 +469,14 @@ class SpeechQueueManager {
     const dropped = this.queue;
     this.queue = [];
     this._stopCurrent();
-    if (hasSpeech()) {
-      try {
-        window.speechSynthesis.cancel();
-      } catch {
-        /* ignore */
-      }
-    }
+    this._silence();
+    dropped.forEach((q) => q.onEnd?.());
+  }
+
+  /** Drop queued messages below danger priority (e.g. once an obstacle has been passed). */
+  clearPendingNonDanger() {
+    const dropped = this.queue.filter((q) => q.weight < PRIORITY_WEIGHT.danger);
+    this.queue = this.queue.filter((q) => q.weight >= PRIORITY_WEIGHT.danger);
     dropped.forEach((q) => q.onEnd?.());
   }
 

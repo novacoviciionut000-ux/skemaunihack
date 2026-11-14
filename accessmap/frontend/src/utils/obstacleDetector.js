@@ -165,17 +165,17 @@ function detectTrafficLightState(bbox, frameWidth, frameHeight, frameSample) {
       const g = data[idx + 1];
       const b = data[idx + 2];
 
-      if (r > 155 && r > g * 1.45 && r > b * 1.45) {
-        redScore += relY < 0.45 ? 1.5 : 1;
-      } else if (g > 145 && g > r * 1.2 && b < 210) {
-        greenScore += relY > 0.55 ? 1.5 : 1;
-      } else if (r > 165 && g > 135 && b < 110 && Math.abs(r - g) < 75) {
-        yellowScore += relY >= 0.3 && relY <= 0.7 ? 1.4 : 1;
+      if (r > 135 && r - Math.max(g, b) > 35) {
+        redScore += relY < 0.5 ? 1.5 : 1;
+      } else if (g > 125 && g - r > 22 && b < 230) {
+        greenScore += relY > 0.5 ? 1.5 : 1;
+      } else if (r > 150 && g > 120 && b < 130 && Math.abs(r - g) < 85) {
+        yellowScore += relY >= 0.25 && relY <= 0.75 ? 1.4 : 1;
       }
     }
   }
 
-  const minPixels = Math.max(3, Math.floor((sw * sh) * 0.03));
+  const minPixels = Math.max(2, Math.floor((sw * sh) * 0.02));
   if (redScore >= minPixels && redScore > greenScore && redScore > yellowScore) {
     return 'red';
   }
@@ -452,7 +452,8 @@ export function analyzeSidewalkPath(frameSample, obstacles = [], prevState = nul
   };
 }
 
-const HAZARDOUS_OBSTACLE_CLASSES = new Set([
+// High-risk moving or large hazards that a white cane cannot detect early enough
+const HIGH_RISK_CLASSES = new Set([
   'person',
   'bicycle',
   'car',
@@ -460,8 +461,13 @@ const HAZARDOUS_OBSTACLE_CLASSES = new Set([
   'bus',
   'truck',
   'traffic light',
-  'fire hydrant',
   'stop sign',
+  'door',
+]);
+
+// Static / low street objects that a white cane sweeps naturally unless huge or at head/chest height
+const CANE_DETECTABLE_CLASSES = new Set([
+  'fire hydrant',
   'parking meter',
   'bench',
   'chair',
@@ -470,6 +476,15 @@ const HAZARDOUS_OBSTACLE_CLASSES = new Set([
   'potted plant',
   'suitcase',
   'dog',
+  'cat',
+  'backpack',
+  'handbag',
+  'umbrella',
+]);
+
+const HAZARDOUS_OBSTACLE_CLASSES = new Set([
+  ...HIGH_RISK_CLASSES,
+  ...CANE_DETECTABLE_CLASSES,
 ]);
 
 /**
@@ -497,14 +512,23 @@ export function analyzeDetections(
 
   const currentObstacles = predictions
     .filter((p) => {
-      // 1. Initial confidence filter
+      // 1. Initial confidence filter (traffic lights are small so allow >= 0.25)
+      if (p.class === 'traffic light') {
+        if (p.score < 0.25) return false;
+        return true;
+      }
       if (p.score < 0.46) return false;
 
-      // 2. Filter out non-hazard trivial items unless very large in foreground
+      // 2. White-cane-aware pre-filter: ignore minor non-hazard objects (bottles, cups, laptops, etc.)
+      // because a blind user sweeps low/small ground clutter with their white cane.
       const isKnownHazard = HAZARDOUS_OBSTACLE_CLASSES.has(p.class);
-      if (!isKnownHazard) {
+      if (!isKnownHazard) return false;
+
+      // Ignore tiny distant cane-detectable items completely
+      if (CANE_DETECTABLE_CLASSES.has(p.class)) {
         const heightRatio = p.bbox[3] / frameHeight;
-        if (heightRatio < 0.35) return false;
+        const areaRatio = (p.bbox[2] * p.bbox[3]) / frameArea;
+        if (heightRatio < 0.24 && areaRatio < 0.08) return false;
       }
       return true;
     })
@@ -594,11 +618,16 @@ export function analyzeDetections(
         }
       }
 
-      // Evaluate Pericol / Threat flag: ONLY take objects that pose a real danger
-      // and that the user is approaching or in direct collision path.
+      // Evaluate Pericol / Threat flag using White-Cane model:
+      // - Skip minor low/ground objects that a white cane already sweeps at ~1-1.5m
+      // - Always alert on moving hazards, traffic lights, head/chest-height overhangs, and large path blockers
       let isThreat = false;
       let threatReason = '';
       let severity = 'far';
+
+      // Object is in the upper/chest-to-head zone (cane sweeps the ground and misses overhangs)
+      const isUpperBodyOrOverhang =
+        y < frameHeight * 0.38 && y + height < frameHeight * 0.82;
 
       if (p.class === 'traffic light') {
         if (trafficLightState === 'red') {
@@ -614,38 +643,42 @@ export function analyzeDetections(
           isThreat = false;
           severity = 'far';
         }
-      } else if (HAZARDOUS_OBSTACLE_CLASSES.has(p.class)) {
+      } else if (HIGH_RISK_CLASSES.has(p.class) && !isReceding) {
         if (inCenterPath) {
           if (smoothedDistance <= 2.2) {
-            // Immediate collision hazard in forward path
             isThreat = true;
             threatReason = isFastApproach ? 'Te apropii rapid' : isApproaching ? 'Te apropii' : 'În calea ta';
             severity = 'danger';
           } else if (smoothedDistance <= 5.2 && isApproaching) {
-            // Approaching obstacle in forward path
             isThreat = true;
             threatReason = 'Te apropii';
             severity = smoothedDistance <= 3.2 ? 'danger' : 'approaching';
           }
         } else {
-          // In side corridors (left / right):
           if (smoothedDistance <= 1.6 && isApproaching) {
-            // Close lateral obstacle user might clip with shoulder or wheel
             isThreat = true;
             threatReason = 'Obstacol lateral apropiat';
             severity = 'approaching';
           } else if (isCentering && isApproaching && smoothedDistance <= 4.0) {
-            // Crossing into user's path (e.g. crossing pedestrian, bike, car)
             isThreat = true;
             threatReason = 'Se îndreaptă spre calea ta';
             severity = 'approaching';
           }
         }
-      } else if (inCenterPath && smoothedDistance <= 1.5) {
-        // Ground tripping hazard right in front of feet
-        isThreat = true;
-        threatReason = 'Obstacol la sol în cale';
-        severity = 'approaching';
+      } else if (CANE_DETECTABLE_CLASSES.has(p.class) && !isReceding) {
+        // Only alert cane-detectable static objects if they are:
+        // 1) at chest/head height (overhanging, cane misses them), OR
+        // 2) large and directly blocking the center path
+        const isLargeBlocker = heightRatio >= 0.34 || areaRatio >= 0.14;
+        if (inCenterPath && isUpperBodyOrOverhang && smoothedDistance <= 3.5) {
+          isThreat = true;
+          threatReason = 'Obstacol la nivelul capului';
+          severity = smoothedDistance <= 2.0 ? 'danger' : 'approaching';
+        } else if (inCenterPath && isLargeBlocker && smoothedDistance <= 3.5 && isApproaching) {
+          isThreat = true;
+          threatReason = 'Obstacol mare în față';
+          severity = smoothedDistance <= 2.0 ? 'danger' : 'approaching';
+        }
       }
 
       // Alert message in Romanian (concise, clear, fast to speak)
@@ -703,7 +736,8 @@ export function analyzeDetections(
       };
     });
 
-  // Keep recently confirmed obstacles for up to 2 missed frames to avoid single-frame dropouts
+  // Keep recently confirmed obstacles for up to 2 missed frames for visual continuity,
+  // but mark them as non-threatening so they never re-trigger voice alerts after passing
   const coasted = prevObstacles
     .filter(
       (prev) =>
@@ -713,6 +747,8 @@ export function analyzeDetections(
     )
     .map((prev) => ({
       ...prev,
+      isThreat: false,
+      severity: 'far',
       missedFrames: (prev.missedFrames || 0) + 1,
     }));
 

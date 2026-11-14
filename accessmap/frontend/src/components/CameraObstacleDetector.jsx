@@ -41,6 +41,10 @@ import {
 } from '../utils/obstacleDetector';
 import { distanceMetersBetween } from '../utils/detourStore';
 import { useIsMobile } from '../hooks/useIsMobile';
+import {
+  getOrientationPermissionState,
+  requestOrientationPermission,
+} from '../utils/orientationPermission';
 
 const SEVERITY_COLORS = {
   danger: { stroke: '#ef4444', fill: 'rgba(239, 68, 68, 0.18)', badgeBg: '#dc2626' },
@@ -49,9 +53,11 @@ const SEVERITY_COLORS = {
 };
 
 const INFERENCE_INTERVAL_MS = 180;
-const ALERT_COOLDOWN_MS = 3000;
+const ALERT_COOLDOWN_MS = 5500;
+const OBSTACLE_ID_REANNOUNCE_MS = 8500;
 const TILT_VIBRATE_COOLDOWN_MS = 2500;
-const SIDEWALK_EVENT_COOLDOWN_MS = 3500;
+const SIDEWALK_EVENT_COOLDOWN_MS = 5500;
+const TRAFFIC_LIGHT_COOLDOWN_MS = 6000;
 // Tilt thresholds (phone held in portrait, screen facing user, pointing camera forward/down at sidewalk)
 // beta = angle from horizontal: 0° = flat on table, 90° = perfectly vertical
 // Normal walking camera angle: 50°–80° (pointing at ground 1-2m ahead)
@@ -95,7 +101,8 @@ export default function CameraObstacleDetector({
   const prevObstaclesRef = useRef([]);
   const prevSidewalkRef = useRef(null);
   const clearFramesRef = useRef(0);
-  const lastAlertRef = useRef({ key: '', severity: '', time: 0 });
+  const spokenObstaclesRef = useRef(new Map());
+  const lastTrafficLightRef = useRef({ state: '', time: 0 });
   const lastTiltVibrateRef = useRef(0);
   const lastTiltSpokenRef = useRef({ reason: null, time: 0 });
   const tiltSmoothedRef = useRef({ beta: null, gamma: null, activeReason: null });
@@ -133,6 +140,9 @@ export default function CameraObstacleDetector({
   const [sidewalkStatus, setSidewalkStatus] = useState(null);
   const [tiltWarning, setTiltWarning] = useState(false);
   const [tiltMessage, setTiltMessage] = useState('');
+  const [orientationPermission, setOrientationPermission] = useState(() =>
+    getOrientationPermissionState()
+  );
   const [debugBeta, setDebugBeta] = useState(null);
   const [debugGamma, setDebugGamma] = useState(null);
   const [isRecordingDetour, setIsRecordingDetour] = useState(false);
@@ -144,6 +154,7 @@ export default function CameraObstacleDetector({
     inferringRef.current = false;
     lastObstacleSigRef.current = '';
     lastSidewalkSigRef.current = '';
+    spokenObstaclesRef.current.clear();
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -185,16 +196,13 @@ export default function CameraObstacleDetector({
     speechQueue.unlock();
     unlockAudioContext();
 
-    // Request iOS orientation permission on user gesture if available
-    if (
-      typeof DeviceOrientationEvent !== 'undefined' &&
-      typeof DeviceOrientationEvent.requestPermission === 'function'
-    ) {
-      DeviceOrientationEvent.requestPermission().catch(() => {});
-    }
+    // iOS: permission can only be requested from a tap. If we don't have it yet,
+    // show an on-screen button (see "Activează senzorul" below) instead of silently failing.
+    setOrientationPermission(getOrientationPermissionState());
 
     const handleOrientation = (event) => {
       if (event.beta == null) return;
+      setOrientationPermission('granted');
       const state = tiltSmoothedRef.current;
       const rawBeta = event.beta;
       const rawGamma = event.gamma ?? 0;
@@ -510,7 +518,7 @@ export default function CameraObstacleDetector({
 
     const runInference = async (video) => {
       const frameSample = captureFrameSample(video, 160, 120);
-      const predictions = await modelRef.current.detect(video);
+      const predictions = await modelRef.current.detect(video, 20, 0.25);
       // Camera was stopped/restarted while the model was running
       if (session !== sessionRef.current) return;
 
@@ -530,10 +538,18 @@ export default function CameraObstacleDetector({
       );
       prevObstaclesRef.current = analyzed;
 
-      // Confirmed obstacles only; threats only unless the user asked for all detections
+      // Confirmed obstacles: active threats plus traffic lights (so red/yellow/green are always visible)
       const confirmedObstacles = analyzed.filter(
-        (o) => o.isConfirmed && (onlyThreatsRef.current ? o.isThreat : true)
+        (o) =>
+          o.isConfirmed &&
+          (onlyThreatsRef.current ? o.isThreat || o.class === 'traffic light' : true)
       );
+
+      // Forget announcement history for obstacles no longer visible
+      const activeIds = new Set(confirmedObstacles.map((o) => o.id));
+      for (const id of spokenObstaclesRef.current.keys()) {
+        if (!activeIds.has(id)) spokenObstaclesRef.current.delete(id);
+      }
 
       const sidewalk = analyzeSidewalkPath(frameSample, confirmedObstacles, prevSidewalkRef.current);
       prevSidewalkRef.current = sidewalk;
@@ -576,16 +592,37 @@ export default function CameraObstacleDetector({
       drawOverlay(confirmedObstacles, sidewalk, width, height);
       if (notifyUpdate) notifyUpdate(confirmedObstacles);
 
+      // Announce traffic light state changes (including green) separately from obstacle alerts
+      const trafficLight = confirmedObstacles.find(
+        (o) => o.class === 'traffic light' && o.trafficLightState && o.trafficLightState !== 'unknown'
+      );
+      if (
+        trafficLight &&
+        voiceOn !== false &&
+        (trafficLight.trafficLightState !== lastTrafficLightRef.current.state ||
+          now - lastTrafficLightRef.current.time >= TRAFFIC_LIGHT_COOLDOWN_MS)
+      ) {
+        lastTrafficLightRef.current = { state: trafficLight.trafficLightState, time: now };
+        const isRed = trafficLight.trafficLightState === 'red';
+        if (isRed) playAlarmBeep();
+        speechQueue.speak(trafficLight.messageRo, { priority: isRed ? 'danger' : 'high' });
+      }
+
       const primaryThreat = confirmedObstacles.find(
-        (o) => o.severity === 'danger' || o.severity === 'approaching'
+        (o) =>
+          !o.isReceding &&
+          o.missedFrames === 0 &&
+          (o.severity === 'danger' || o.severity === 'approaching')
       );
 
       if (!primaryThreat) {
         clearFramesRef.current += 1;
-        if (clearFramesRef.current >= 4) {
+        if (clearFramesRef.current >= 3) {
           setActiveAlert(null);
           if (hadActiveAlertRef.current) {
             hadActiveAlertRef.current = false;
+            // Drop stale queued obstacle alerts once the obstacle is passed/cleared
+            speechQueue.clearPendingNonDanger();
             emitObstaclesClearEvent();
           }
         }
@@ -603,13 +640,26 @@ export default function CameraObstacleDetector({
           : primaryThreat
       );
 
-      const alertKey = `${primaryThreat.class}:${primaryThreat.trafficLightState || ''}:${primaryThreat.zone}`;
-      const last = lastAlertRef.current;
-      const escalated = primaryThreat.severity === 'danger' && last.severity !== 'danger';
-      const cooldownElapsed = now - last.time >= ALERT_COOLDOWN_MS;
-      if (alertKey === last.key && !escalated && !cooldownElapsed) return;
+      const prevSpoken = spokenObstaclesRef.current.get(primaryThreat.id);
+      const isNewObstacle = !prevSpoken;
+      const escalatedToDanger =
+        primaryThreat.severity === 'danger' && prevSpoken?.severity !== 'danger';
+      const movedMuchCloser =
+        prevSpoken &&
+        primaryThreat.inCenterPath &&
+        prevSpoken.distanceMeters - primaryThreat.distanceMeters >= 0.7 &&
+        now - prevSpoken.time >= ALERT_COOLDOWN_MS;
+      const longElapsed =
+        prevSpoken &&
+        primaryThreat.inCenterPath &&
+        now - prevSpoken.time >= OBSTACLE_ID_REANNOUNCE_MS;
+      if (!isNewObstacle && !escalatedToDanger && !movedMuchCloser && !longElapsed) return;
 
-      lastAlertRef.current = { key: alertKey, severity: primaryThreat.severity, time: now };
+      spokenObstaclesRef.current.set(primaryThreat.id, {
+        severity: primaryThreat.severity,
+        distanceMeters: primaryThreat.distanceMeters,
+        time: now,
+      });
       hadActiveAlertRef.current = true;
 
       const payload = {
@@ -634,8 +684,8 @@ export default function CameraObstacleDetector({
       emitObstacleAlertEvent(payload);
       if (notifyAlert) notifyAlert(payload);
 
-      // Sidewalk correction already spoke this cycle; don't talk over it
-      if (!needsSidewalkWarning && voiceOn !== false) {
+      // Skip when the sidewalk correction already spoke, and for traffic lights (announced above)
+      if (!needsSidewalkWarning && primaryThreat.class !== 'traffic light' && voiceOn !== false) {
         const isDanger = primaryThreat.severity === 'danger';
         if (isDanger) playAlarmBeep();
         speechQueue.speak(primaryThreat.messageRo, { priority: isDanger ? 'danger' : 'high' });
@@ -678,20 +728,12 @@ export default function CameraObstacleDetector({
       isStartingRef.current = true;
       setError(null);
 
-      // Unlock Web Audio on user gesture (used for alarm beeps — shared AudioContext from speechQueue)
+      // Unlock Web Audio + SpeechSynthesis synchronously on user gesture (required by iOS Safari)
       unlockAudioContext();
+      speechQueue.unlock(true);
 
-      // Request iOS 13+ DeviceOrientation permission on user gesture if needed
-      if (
-        typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function'
-      ) {
-        try {
-          await DeviceOrientationEvent.requestPermission();
-        } catch {
-          // Non-fatal if user declines orientation permission
-        }
-      }
+      // Orientation permission (iOS) — cached helper, never prompts twice
+      requestOrientationPermission().then((res) => setOrientationPermission(res));
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setError('Browserul nu suportă accesul la cameră (necesită HTTPS sau localhost).');
@@ -1178,6 +1220,35 @@ export default function CameraObstacleDetector({
             <Smartphone size={18} style={{ flexShrink: 0 }} />
             <span style={{ flex: 1, lineHeight: 1.3 }}>{tiltMessage || 'Telefonul e înclinat prea în sus! Coboară-l spre trotuar.'}</span>
           </div>
+        )}
+
+        {/* iOS: tilt sensor needs an explicit tap to be enabled */}
+        {isOpen && (orientationPermission === 'unknown' || orientationPermission === 'denied') && (
+          <button
+            type="button"
+            onClick={() => {
+              requestOrientationPermission().then((res) => setOrientationPermission(res));
+            }}
+            style={{
+              position: 'absolute',
+              top: tiltWarning ? 76 : 12,
+              left: 12,
+              zIndex: 1600,
+              padding: '9px 12px',
+              borderRadius: 10,
+              border: '2px solid #ffffff',
+              background: '#2563eb',
+              color: '#ffffff',
+              fontSize: 12.5,
+              fontWeight: 800,
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+            }}
+          >
+            {orientationPermission === 'denied'
+              ? 'Senzor refuzat — închide Safari complet și reîncearcă'
+              : 'Activează senzorul de înclinare'}
+          </button>
         )}
 
         {/* DEBUG overlay — afișează valorile beta/gamma în timp real */}
