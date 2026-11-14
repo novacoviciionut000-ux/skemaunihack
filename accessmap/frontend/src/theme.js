@@ -1,5 +1,5 @@
 /**
- * AccessVision design palette: the only colors the UI uses.
+ * Vizn design palette: the only colors the UI uses.
  *
  * One brand blue, a slate neutral scale, and three status colors. Every pair below is
  * chosen to pass WCAG AA (4.5:1) for its intended use, which matters more than usual

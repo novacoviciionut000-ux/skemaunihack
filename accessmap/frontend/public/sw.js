@@ -1,4 +1,4 @@
-/* AccessVision service worker.
+/* Vizn service worker.
  *
  * - App shell (index.html): network-first, so a new deploy is picked up immediately;
  *   the cached copy is only used offline.
@@ -11,7 +11,7 @@
  *
  * Bump VERSION to drop all old caches.
  */
-const VERSION = 'v1';
+const VERSION = 'v2'; // v2: app renamed to Vizn
 const SHELL_CACHE = `shell-${VERSION}`;
 const ASSET_CACHE = `assets-${VERSION}`;
 const MODEL_CACHE = `model-${VERSION}`;
@@ -21,7 +21,7 @@ const MAX_ASSETS = 80;
 
 const OFFLINE_HTML = `<!doctype html><html lang="ro"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AccessVision - fără conexiune</title>
+<title>Vizn - fără conexiune</title>
 <body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#0f172a;color:#f8fafc;font-family:system-ui,sans-serif;text-align:center;padding:24px">
 <div><h1 style="font-size:22px">Nu există conexiune la internet</h1>
 <p style="color:#cbd5e1">Aplicația are nevoie de internet la prima pornire. Reîncearcă după ce te conectezi.</p>

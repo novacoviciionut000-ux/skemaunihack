@@ -1,6 +1,6 @@
 {
-  "name": "AccessVision - Ghidare asistivă pentru nevăzători",
-  "short_name": "AccessVision",
+  "name": "Vizn - Ghidare asistivă pentru nevăzători",
+  "short_name": "Vizn",
   "description": "Navigație pietonală accesibilă cu comenzi vocale și detecție de obstacole prin cameră.",
   "lang": "ro",
   "dir": "ltr",
