@@ -600,7 +600,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
               background: '#ffffff',
               borderRadius: 18,
               padding: '22px 22px 18px',
-              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
+              boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.4)',
               fontFamily: "'Inter', system-ui, sans-serif",
             }}
           >
@@ -628,7 +628,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                   marginBottom: 10,
                   minHeight: 56,
                   borderRadius: 14,
-                  border: '2px solid #2563eb',
+                  border: '2px solid #1D4ED8',
                   background: '#eff6ff',
                   cursor: roleSaving ? 'wait' : 'pointer',
                   fontFamily: 'inherit',

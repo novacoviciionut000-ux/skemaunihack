@@ -212,7 +212,7 @@ export default function ReportMarker({ report }) {
               disabled={voted || notThereState === 'sending' || notThereState === 'sent'}
               style={{
                 width: '100%',
-                background: notThereState === 'sent' ? '#dcfce7' : '#f1f5f9',
+                background: notThereState === 'sent' ? '#F0FDF4' : '#F1F5F9',
                 color: notThereState === 'sent' ? '#15803d' : '#334155',
                 border: '1px solid #cbd5e1',
                 padding: '7px 12px',
