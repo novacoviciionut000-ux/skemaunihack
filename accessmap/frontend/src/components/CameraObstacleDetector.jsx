@@ -103,6 +103,14 @@ export default function CameraObstacleDetector({
   const hadActiveAlertRef = useRef(false);
   const isStartingRef = useRef(false);
   const prevOpenRef = useRef(false);
+  const inferringRef = useRef(false);
+  const sessionRef = useRef(0); // bumped on every start/stop so late inference results are discarded
+  const lastObstacleSigRef = useRef('');
+  const lastSidewalkSigRef = useRef('');
+
+  // Latest props, readable from the long-lived detection loop without restarting it
+  const liveRef = useRef({});
+  liveRef.current = { voiceEnabled, onObstacleAlert, onObstaclesUpdate };
 
   useEffect(() => {
     speechQueue.setVoiceEnabled(voiceEnabled);
@@ -132,6 +140,10 @@ export default function CameraObstacleDetector({
   const [isSimulatedMode, setIsSimulatedMode] = useState(false);
 
   const stopCamera = useCallback(() => {
+    sessionRef.current += 1;
+    inferringRef.current = false;
+    lastObstacleSigRef.current = '';
+    lastSidewalkSigRef.current = '';
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -494,150 +506,171 @@ export default function CameraObstacleDetector({
   }, []);
 
   const startDetectionLoop = useCallback(() => {
-    const detectFrame = async (timestamp) => {
-      const video = videoRef.current;
-      if (!video || video.readyState < 2 || !modelRef.current) {
-        rafRef.current = requestAnimationFrame(detectFrame);
-        return;
+    const session = ++sessionRef.current;
+
+    const runInference = async (video) => {
+      const frameSample = captureFrameSample(video, 160, 120);
+      const predictions = await modelRef.current.detect(video);
+      // Camera was stopped/restarted while the model was running
+      if (session !== sessionRef.current) return;
+
+      const { voiceEnabled: voiceOn, onObstacleAlert: notifyAlert, onObstaclesUpdate: notifyUpdate } =
+        liveRef.current;
+      const width = video.videoWidth || 640;
+      const height = video.videoHeight || 480;
+      const now = Date.now();
+
+      const analyzed = analyzeDetections(
+        predictions,
+        width,
+        height,
+        prevObstaclesRef.current,
+        frameSample,
+        now
+      );
+      prevObstaclesRef.current = analyzed;
+
+      // Confirmed obstacles only; threats only unless the user asked for all detections
+      const confirmedObstacles = analyzed.filter(
+        (o) => o.isConfirmed && (onlyThreatsRef.current ? o.isThreat : true)
+      );
+
+      const sidewalk = analyzeSidewalkPath(frameSample, confirmedObstacles, prevSidewalkRef.current);
+      prevSidewalkRef.current = sidewalk;
+
+      // Only touch React state when something visible changed (avoids re-rendering ~5x/s)
+      const sidewalkSig = `${sidewalk.status}|${sidewalk.action}|${sidewalk.correctionRo}`;
+      if (sidewalkSig !== lastSidewalkSigRef.current) {
+        lastSidewalkSigRef.current = sidewalkSig;
+        setSidewalkStatus(sidewalk);
+      }
+      const obstacleSig = confirmedObstacles
+        .map((o) => `${o.id}:${o.severity}:${o.distanceMeters}:${o.zone}:${o.trafficLightState || ''}`)
+        .join(',');
+      if (obstacleSig !== lastObstacleSigRef.current) {
+        lastObstacleSigRef.current = obstacleSig;
+        setDetectedObstacles(confirmedObstacles);
       }
 
-      if (timestamp - lastInferenceRef.current >= INFERENCE_INTERVAL_MS) {
-        lastInferenceRef.current = timestamp;
-        try {
-          const frameSample = captureFrameSample(video, 160, 120);
-          const predictions = await modelRef.current.detect(video);
-          const width = video.videoWidth || 640;
-          const height = video.videoHeight || 480;
+      const needsSidewalkWarning =
+        sidewalk.action && sidewalk.action !== 'straight' && sidewalk.action !== 'unknown';
 
-          const analyzed = analyzeDetections(
-            predictions,
-            width,
-            height,
-            prevObstaclesRef.current,
-            frameSample
-          );
-          prevObstaclesRef.current = analyzed;
+      if (
+        needsSidewalkWarning &&
+        (sidewalk.action !== lastSidewalkEventRef.current.action ||
+          now - lastSidewalkEventRef.current.time >= SIDEWALK_EVENT_COOLDOWN_MS)
+      ) {
+        lastSidewalkEventRef.current = { action: sidewalk.action, time: now };
+        emitSidewalkStatusEvent({ ...sidewalk, timestamp: now });
 
-          // Surface ONLY obstacles that represent active dangers / approaching collision threats
-          // unless user toggles to show all raw detections
-          const confirmedObstacles = analyzed.filter(
-            (o) => o.isConfirmed && (onlyThreatsRef.current ? o.isThreat : true)
-          );
-
-          const sidewalk = analyzeSidewalkPath(
-            frameSample,
-            confirmedObstacles,
-            prevSidewalkRef.current
-          );
-          prevSidewalkRef.current = sidewalk;
-          setSidewalkStatus(sidewalk);
-
-          const now = Date.now();
-          const needsSidewalkWarning =
-            sidewalk.action &&
-            sidewalk.action !== 'straight' &&
-            sidewalk.action !== 'unknown';
-
-          if (
-            needsSidewalkWarning &&
-            (sidewalk.action !== lastSidewalkEventRef.current.action ||
-              now - lastSidewalkEventRef.current.time >= SIDEWALK_EVENT_COOLDOWN_MS)
-          ) {
-            lastSidewalkEventRef.current = { action: sidewalk.action, time: now };
-            emitSidewalkStatusEvent({ ...sidewalk, timestamp: now });
-
-            // Alarm beep when path is blocked/unknown — plays concurrently with TTS
-            if (sidewalk.action === 'stop' || sidewalk.action === 'unknown') {
-              playAlarmBeep();
-            }
-
-            // TTS correction — priority based on severity
-            if (voiceEnabled !== false) {
-              const swPriority = sidewalk.action === 'stop' ? 'danger' : 'urgent';
-              speechQueue.speak(sidewalk.correctionRo, { priority: swPriority });
-            }
-            if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-              navigator.vibrate(sidewalk.action === 'stop' ? [300, 100, 300, 100, 300] : [220, 90, 220]);
-            }
-          }
-
-          setDetectedObstacles(confirmedObstacles);
-          drawOverlay(confirmedObstacles, sidewalk, width, height);
-          if (onObstaclesUpdate) onObstaclesUpdate(confirmedObstacles);
-
-          const primaryThreat = confirmedObstacles.find(
-            (o) => o.severity === 'danger' || o.severity === 'approaching'
-          );
-
-          if (primaryThreat) {
-            clearFramesRef.current = 0;
-            setActiveAlert(primaryThreat);
-            const alertKey = `${primaryThreat.class}:${primaryThreat.trafficLightState || ''}:${primaryThreat.zone}`;
-            const escalated =
-              primaryThreat.severity === 'danger' &&
-              lastAlertRef.current.severity !== 'danger';
-            const cooldownElapsed = now - lastAlertRef.current.time >= ALERT_COOLDOWN_MS;
-
-            if (alertKey !== lastAlertRef.current.key || escalated || cooldownElapsed) {
-              lastAlertRef.current = {
-                key: alertKey,
-                severity: primaryThreat.severity,
-                time: now,
-              };
-              hadActiveAlertRef.current = true;
-
-              const payload = {
-                type: 'obstacle-alert',
-                severity: primaryThreat.severity,
-                obstacle: {
-                  class: primaryThreat.class,
-                  labelRo: primaryThreat.labelRo,
-                  trafficLightState: primaryThreat.trafficLightState,
-                  zone: primaryThreat.zone,
-                  zoneRo: primaryThreat.zoneRo,
-                  distanceMeters: primaryThreat.distanceMeters,
-                  isGrowing: primaryThreat.isGrowing,
-                  inCenterPath: primaryThreat.inCenterPath,
-                },
-                sidewalk,
-                messageRo: primaryThreat.messageRo,
-                timestamp: now,
-                allObstacles: confirmedObstacles,
-              };
-
-              emitObstacleAlertEvent(payload);
-              if (onObstacleAlert) onObstacleAlert(payload);
-
-              // Avertizare vocală — prioritate bazată pe severitate
-              if (!needsSidewalkWarning && voiceEnabled !== false) {
-                const obsPriority = primaryThreat.severity === 'danger' ? 'danger' : 'high';
-                // Alarm beep concurent cu TTS pentru pericol iminent
-                if (primaryThreat.severity === 'danger') {
-                  playAlarmBeep();
-                }
-                speechQueue.speak(primaryThreat.messageRo, { priority: obsPriority });
-              }
-            }
-          } else {
-            clearFramesRef.current += 1;
-            if (clearFramesRef.current >= 4) {
-              setActiveAlert(null);
-              if (hadActiveAlertRef.current) {
-                hadActiveAlertRef.current = false;
-                emitObstaclesClearEvent();
-              }
-            }
-          }
-        } catch (err) {
-          console.warn('Obstacle detection frame error:', err);
+        const isStop = sidewalk.action === 'stop';
+        if (isStop) playAlarmBeep();
+        if (voiceOn !== false) {
+          speechQueue.speak(sidewalk.correctionRo, { priority: isStop ? 'danger' : 'urgent' });
+        }
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          navigator.vibrate(isStop ? [300, 100, 300, 100, 300] : [220, 90, 220]);
         }
       }
 
-      rafRef.current = requestAnimationFrame(detectFrame);
+      drawOverlay(confirmedObstacles, sidewalk, width, height);
+      if (notifyUpdate) notifyUpdate(confirmedObstacles);
+
+      const primaryThreat = confirmedObstacles.find(
+        (o) => o.severity === 'danger' || o.severity === 'approaching'
+      );
+
+      if (!primaryThreat) {
+        clearFramesRef.current += 1;
+        if (clearFramesRef.current >= 4) {
+          setActiveAlert(null);
+          if (hadActiveAlertRef.current) {
+            hadActiveAlertRef.current = false;
+            emitObstaclesClearEvent();
+          }
+        }
+        return;
+      }
+
+      clearFramesRef.current = 0;
+      setActiveAlert((prev) =>
+        prev &&
+        prev.id === primaryThreat.id &&
+        prev.severity === primaryThreat.severity &&
+        prev.distanceMeters === primaryThreat.distanceMeters &&
+        prev.messageRo === primaryThreat.messageRo
+          ? prev
+          : primaryThreat
+      );
+
+      const alertKey = `${primaryThreat.class}:${primaryThreat.trafficLightState || ''}:${primaryThreat.zone}`;
+      const last = lastAlertRef.current;
+      const escalated = primaryThreat.severity === 'danger' && last.severity !== 'danger';
+      const cooldownElapsed = now - last.time >= ALERT_COOLDOWN_MS;
+      if (alertKey === last.key && !escalated && !cooldownElapsed) return;
+
+      lastAlertRef.current = { key: alertKey, severity: primaryThreat.severity, time: now };
+      hadActiveAlertRef.current = true;
+
+      const payload = {
+        type: 'obstacle-alert',
+        severity: primaryThreat.severity,
+        obstacle: {
+          class: primaryThreat.class,
+          labelRo: primaryThreat.labelRo,
+          trafficLightState: primaryThreat.trafficLightState,
+          zone: primaryThreat.zone,
+          zoneRo: primaryThreat.zoneRo,
+          distanceMeters: primaryThreat.distanceMeters,
+          isGrowing: primaryThreat.isGrowing,
+          inCenterPath: primaryThreat.inCenterPath,
+        },
+        sidewalk,
+        messageRo: primaryThreat.messageRo,
+        timestamp: now,
+        allObstacles: confirmedObstacles,
+      };
+
+      emitObstacleAlertEvent(payload);
+      if (notifyAlert) notifyAlert(payload);
+
+      // Sidewalk correction already spoke this cycle; don't talk over it
+      if (!needsSidewalkWarning && voiceOn !== false) {
+        const isDanger = primaryThreat.severity === 'danger';
+        if (isDanger) playAlarmBeep();
+        speechQueue.speak(primaryThreat.messageRo, { priority: isDanger ? 'danger' : 'high' });
+      }
     };
 
+    const detectFrame = (timestamp) => {
+      if (session !== sessionRef.current) return; // loop superseded or stopped
+      rafRef.current = requestAnimationFrame(detectFrame);
+
+      const video = videoRef.current;
+      if (
+        document.hidden ||
+        inferringRef.current ||
+        !video ||
+        video.readyState < 2 ||
+        !modelRef.current ||
+        timestamp - lastInferenceRef.current < INFERENCE_INTERVAL_MS
+      ) {
+        return;
+      }
+
+      // Never run two inferences at once: a slow device would otherwise queue them up and stutter
+      inferringRef.current = true;
+      lastInferenceRef.current = timestamp;
+      runInference(video)
+        .catch((err) => console.warn('Obstacle detection frame error:', err))
+        .finally(() => {
+          if (session === sessionRef.current) inferringRef.current = false;
+        });
+    };
+
+    inferringRef.current = false;
     rafRef.current = requestAnimationFrame(detectFrame);
-  }, [drawOverlay, onObstacleAlert, onObstaclesUpdate]);
+  }, [drawOverlay]);
 
   const startCamera = useCallback(
     async (requestedFacingMode = facingMode) => {

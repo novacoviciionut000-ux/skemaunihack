@@ -1,170 +1,176 @@
 /**
- * Centralized Priority Speech Queue for AccessMap
+ * Centralized priority speech queue for AccessMap.
  *
- * Features:
- * - Priority-based: danger > urgent > high > normal
- *   Items with higher danger rating are spoken FIRST (sorted on each insertion)
- * - TTL: items older than 10 seconds are dropped before processing
- * - No setTimeout for speak() — uses utterance.onend chain (mobile-safe)
- * - Browser's speechSynthesis processes one utterance at a time; we manage order ourselves
- * - Alarm beep (Web Audio) plays concurrently with TTS — does NOT go through the queue
+ * - Priority order: danger > urgent > high > normal. Higher priority is spoken first.
+ * - A danger/urgent message interrupts a lower-priority utterance that is mid-speech.
+ * - Queue items expire after TTL_MS so stale warnings are never read out late.
+ * - The same text is not repeated within REPEAT_COOLDOWN_MS.
+ * - Utterances are chained with onend (no timers per speak), with a watchdog for
+ *   engines that drop onend (mobile Safari, Chrome after long utterances).
+ * - Alarm beeps use Web Audio and play concurrently; they bypass the queue.
  */
 
-// Priority levels → numeric weight (higher = spoken sooner)
-const PRIORITY_WEIGHT = {
-  danger: 4,
-  urgent: 3,
-  high: 2,
-  normal: 1,
-};
+const PRIORITY_WEIGHT = { danger: 4, urgent: 3, high: 2, normal: 1 };
 
-const TTL_MS = 4_000; // Drop queue items older than 4 seconds
+const TTL_MS = 4_000;
+const MAX_QUEUE = 3;
+const REPEAT_COOLDOWN_MS = 2_500;
+const CANCEL_SETTLE_MS = 60; // speak() right after cancel() is dropped by iOS Safari and Chrome
+const DEFAULT_LANG = 'ro-RO';
+
+const hasSpeech = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
 
 // ---------------------------------------------------------------------------
-// Alarm / beep tones (Web Audio) — separate from TTS, plays in parallel
+// Beeps (Web Audio)
 // ---------------------------------------------------------------------------
-let _alarmCtx = null;
+let audioCtx = null;
 
-function _getAudioCtx() {
-  if (_alarmCtx && _alarmCtx.state !== 'closed') return _alarmCtx;
+function getAudioCtx() {
+  if (audioCtx && audioCtx.state !== 'closed') return audioCtx;
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (Ctx) _alarmCtx = new Ctx();
-  } catch {}
-  return _alarmCtx;
+    if (Ctx) audioCtx = new Ctx();
+  } catch {
+    audioCtx = null;
+  }
+  return audioCtx;
 }
 
-/**
- * Play an urgent alarm beep (3 fast descending pulses).
- * Used when path/sidewalk is blocked — plays concurrently with TTS.
- */
-export function playAlarmBeep() {
-  const ctx = _getAudioCtx();
+function playTones({ freqs, type, step, length, peak }) {
+  const ctx = getAudioCtx();
   if (!ctx) return;
   try {
     if (ctx.state === 'suspended') ctx.resume();
     const now = ctx.currentTime;
-    // Three rapid pulses: 880 Hz → 660 Hz → 440 Hz
-    [880, 660, 440].forEach((freq, i) => {
+    freqs.forEach((freq, i) => {
+      const start = now + i * step;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(freq, now + i * 0.18);
-      gain.gain.setValueAtTime(0.001, now + i * 0.18);
-      gain.gain.exponentialRampToValueAtTime(0.28, now + i * 0.18 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.18 + 0.14);
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.exponentialRampToValueAtTime(peak, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + length);
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.start(now + i * 0.18);
-      osc.stop(now + i * 0.18 + 0.15);
+      osc.start(start);
+      osc.stop(start + length + 0.01);
+      osc.onended = () => {
+        osc.disconnect();
+        gain.disconnect();
+      };
     });
-  } catch {}
-}
-
-/**
- * Play a gentle orientation feedback tone (tilt warning).
- * Two soft sine pulses.
- */
-export function playTiltBeep() {
-  const ctx = _getAudioCtx();
-  if (!ctx) return;
-  try {
-    if (ctx.state === 'suspended') ctx.resume();
-    const now = ctx.currentTime;
-    [300, 240].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, now + i * 0.14);
-      gain.gain.setValueAtTime(0.001, now + i * 0.14);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + i * 0.14 + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.14 + 0.095);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now + i * 0.14);
-      osc.stop(now + i * 0.14 + 0.1);
-    });
-  } catch {}
-}
-
-/**
- * Unlock AudioContext on first user gesture — call from touchstart/click handler.
- */
-export function unlockAudioContext() {
-  const ctx = _getAudioCtx();
-  if (ctx && ctx.state === 'suspended') {
-    ctx.resume().catch(() => {});
+  } catch {
+    /* audio is best-effort */
   }
 }
 
-// ---------------------------------------------------------------------------
-// SpeechQueueManager
-// ---------------------------------------------------------------------------
+/** Urgent alarm: three fast descending sawtooth pulses (path blocked / danger). */
+export function playAlarmBeep() {
+  playTones({ freqs: [880, 660, 440], type: 'sawtooth', step: 0.18, length: 0.14, peak: 0.28 });
+}
 
+/** Gentle two-pulse sine tone for phone tilt feedback. */
+export function playTiltBeep() {
+  playTones({ freqs: [300, 240], type: 'sine', step: 0.14, length: 0.095, peak: 0.18 });
+}
+
+/** Resume the AudioContext; call from a user gesture. */
+export function unlockAudioContext() {
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Speech queue
+// ---------------------------------------------------------------------------
 class SpeechQueueManager {
   constructor() {
-    /** @type {Array<{text:string, priority:string, weight:number, lang:string, rate:number, pitch:number, addedAt:number}>} */
+    /** @type {Array<{text:string, weight:number, lang:string, rate:number, pitch:number, addedAt:number, onEnd:?Function}>} */
     this.queue = [];
-    this.isSpeaking = false;
+    this.current = null; // { item, token } for the utterance being spoken
     this.voiceEnabled = true;
     this.voices = [];
+    this._voiceCache = new Map(); // lang prefix -> SpeechSynthesisVoice | null
     this._unlocked = false;
-    this._currentUtterance = null;
-    this._watchdogTimer = null;
+    this._token = 0;
+    this._watchdog = null;
+    this._settleTimer = null;
+    this._lastSpoken = new Map(); // text -> timestamp
 
-    if (typeof window !== 'undefined') {
-      this._init();
-    }
+    if (typeof window !== 'undefined') this._init();
+  }
+
+  get isSpeaking() {
+    return this.current !== null;
   }
 
   _init() {
-    this._loadVoices();
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    if (hasSpeech()) {
+      this._loadVoices();
       window.speechSynthesis.onvoiceschanged = () => this._loadVoices();
+      // Stop talking when the page goes away so the engine is not left in a stuck state
+      window.addEventListener('pagehide', () => this.cancel());
     }
 
-    // Unlock on first gesture — synchronous in event handler
     const unlockOnce = () => {
-      if (this._unlocked) return;
-      this._unlocked = true;
       this.unlock();
       unlockAudioContext();
+      ['touchstart', 'click', 'keydown'].forEach((evt) =>
+        window.removeEventListener(evt, unlockOnce, { capture: true })
+      );
     };
-    ['touchstart', 'click', 'keydown'].forEach((evt) => {
-      window.addEventListener(evt, unlockOnce, { capture: true, passive: true });
-    });
-  }
-
-  _loadVoices() {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    try { this.voices = window.speechSynthesis.getVoices() || []; } catch { this.voices = []; }
-  }
-
-  getRomanianVoice() {
-    if (!this.voices.length) this._loadVoices();
-    return (
-      this.voices.find((v) =>
-        v.lang &&
-        (v.lang.toLowerCase() === 'ro-ro' ||
-          v.lang.toLowerCase() === 'ro_ro' ||
-          v.lang.toLowerCase().startsWith('ro'))
-      ) || null
+    ['touchstart', 'click', 'keydown'].forEach((evt) =>
+      window.addEventListener(evt, unlockOnce, { capture: true, passive: true })
     );
   }
 
+  _loadVoices() {
+    if (!hasSpeech()) return;
+    try {
+      this.voices = window.speechSynthesis.getVoices() || [];
+    } catch {
+      this.voices = [];
+    }
+    this._voiceCache.clear();
+  }
+
+  /** Best voice for a language: exact match first, then same language, preferring on-device voices. */
+  getVoice(lang = DEFAULT_LANG) {
+    const key = lang.toLowerCase();
+    if (this._voiceCache.has(key)) return this._voiceCache.get(key);
+    if (!this.voices.length) this._loadVoices();
+
+    const norm = (v) => (v.lang || '').toLowerCase().replace('_', '-');
+    const base = key.split('-')[0];
+    const pick = (list) => list.find((v) => v.localService) || list[0] || null;
+    const exact = this.voices.filter((v) => norm(v) === key);
+    const sameLang = this.voices.filter((v) => norm(v).split('-')[0] === base);
+    const voice = pick(exact) || pick(sameLang);
+
+    // Only cache hits, since voices may still be loading
+    if (voice) this._voiceCache.set(key, voice);
+    return voice;
+  }
+
+  getRomanianVoice() {
+    return this.getVoice(DEFAULT_LANG);
+  }
+
+  /** Open the audio channel on iOS/Android with a silent utterance. Safe to call repeatedly. */
   unlock() {
-    if (this._unlocked) return;
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    if (this._unlocked || !hasSpeech()) return;
     this._unlocked = true;
     try {
       if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-      // Silent utterance to open audio channel on iOS/Android (only once)
       const silent = new SpeechSynthesisUtterance('\u200B');
       silent.volume = 0;
       silent.rate = 10;
-      silent.lang = 'ro-RO';
+      silent.lang = DEFAULT_LANG;
       window.speechSynthesis.speak(silent);
-    } catch {}
+    } catch {
+      /* ignore */
+    }
   }
 
   setVoiceEnabled(enabled) {
@@ -172,190 +178,198 @@ class SpeechQueueManager {
     if (!this.voiceEnabled) this.cancel();
   }
 
-  getVoiceEnabled() { return this.voiceEnabled; }
+  getVoiceEnabled() {
+    return this.voiceEnabled;
+  }
 
   /**
-   * Add text to the priority queue.
-   *
    * @param {string} text
    * @param {object} [options]
-   *   - priority: 'danger' | 'urgent' | 'high' | 'normal'  (default: 'normal')
-   *   - interrupt: boolean — cancel everything and speak immediately
-   *   - rate: number (default 1.0)
-   *   - pitch: number (default 1.0)
-   *   - lang: string (default 'ro-RO')
+   * @param {'danger'|'urgent'|'high'|'normal'} [options.priority='normal']
+   * @param {boolean} [options.interrupt=false] cancel everything and speak now
+   * @param {number} [options.rate=1.1]
+   * @param {number} [options.pitch=1]
+   * @param {string} [options.lang='ro-RO']
+   * @param {Function} [options.onEnd] called once when spoken, dropped or cancelled
    */
   speak(text, options = {}) {
     const {
       rate = 1.1,
       pitch = 1.0,
-      lang = 'ro-RO',
+      lang = DEFAULT_LANG,
       interrupt = false,
       priority = 'normal',
       onEnd = null,
     } = options;
 
-    if (!this.voiceEnabled) {
-      if (onEnd) onEnd();
-      return;
-    }
-    if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      if (onEnd) onEnd();
-      return;
-    }
-
-    const trimmed = String(text).trim();
-    if (!trimmed) {
-      if (onEnd) onEnd();
+    const trimmed = text ? String(text).trim() : '';
+    if (!this.voiceEnabled || !trimmed || !hasSpeech()) {
+      onEnd?.();
       return;
     }
 
     const weight = PRIORITY_WEIGHT[priority] ?? PRIORITY_WEIGHT.normal;
+    const item = { text: trimmed, weight, lang, rate, pitch, onEnd, addedAt: Date.now() };
 
     if (interrupt) {
-      const wasActive =
-        this.isSpeaking ||
-        (typeof window !== 'undefined' &&
-          window.speechSynthesis &&
-          (window.speechSynthesis.speaking || window.speechSynthesis.pending));
-      this.cancel();
-      this._enqueue({ text: trimmed, priority, weight, lang, rate, pitch, onEnd });
-      if (wasActive) {
-        // iOS Safari & Chrome silently drop speak() if called synchronously right after cancel()
-        setTimeout(() => this._processQueue(), 60);
-      } else {
-        this._processQueue();
-      }
+      this._cancelAll();
+      this._enqueue(item);
+      this._scheduleProcess();
       return;
     }
 
-    // Deduplication: skip if same text already in queue or currently speaking
-    if (this.queue.some((item) => item.text === trimmed)) {
-      if (onEnd) onEnd();
+    // Skip repeats: same text queued, being spoken, or spoken very recently
+    const now = item.addedAt;
+    const recent = this._lastSpoken.get(trimmed);
+    if (
+      this.queue.some((q) => q.text === trimmed) ||
+      this.current?.item.text === trimmed ||
+      (recent !== undefined && now - recent < REPEAT_COOLDOWN_MS)
+    ) {
+      onEnd?.();
       return;
     }
 
-    // Drop low-priority items when queue is full (keep up to 3 items max)
-    if (this.queue.length >= 3) {
-      // Remove lowest-priority non-danger item
-      const lowestIdx = this._findLowestIndex();
-      if (lowestIdx !== -1 && this.queue[lowestIdx].weight < weight) {
-        this.queue.splice(lowestIdx, 1);
-      } else {
-        if (onEnd) onEnd();
-        return; // Queue full with higher priority items — skip this one
+    // Full queue: replace the lowest-priority item only if the new one outranks it
+    if (this.queue.length >= MAX_QUEUE) {
+      const lowest = this.queue[this.queue.length - 1];
+      if (lowest.weight >= weight) {
+        onEnd?.();
+        return;
       }
+      this.queue.pop();
+      lowest.onEnd?.();
     }
 
-    this._enqueue({ text: trimmed, priority, weight, lang, rate, pitch, onEnd });
+    this._enqueue(item);
 
-    if (!this.isSpeaking) {
+    if (!this.current) {
       this._processQueue();
+    } else if (weight >= PRIORITY_WEIGHT.urgent && weight > this.current.item.weight) {
+      // Urgent warning beats a lower-priority utterance that is mid-speech
+      this._stopCurrent();
+      this._scheduleProcess();
     }
   }
 
+  /** Insert keeping the queue sorted by weight (desc), then arrival order. */
   _enqueue(item) {
-    item.addedAt = Date.now();
-    this.queue.push(item);
-    // Sort by weight descending so highest priority is at index 0
-    this.queue.sort((a, b) => b.weight - a.weight);
+    let i = this.queue.length;
+    while (i > 0 && this.queue[i - 1].weight < item.weight) i--;
+    this.queue.splice(i, 0, item);
   }
 
-  _findLowestIndex() {
-    if (!this.queue.length) return -1;
-    let idx = 0;
-    for (let i = 1; i < this.queue.length; i++) {
-      if (this.queue[i].weight < this.queue[idx].weight) idx = i;
-    }
-    return idx;
-  }
-
-  /** Drop items older than TTL_MS */
-  _pruneExpired() {
-    const cutoff = Date.now() - TTL_MS;
-    this.queue = this.queue.filter((item) => item.addedAt >= cutoff);
+  _scheduleProcess() {
+    clearTimeout(this._settleTimer);
+    this._settleTimer = setTimeout(() => {
+      this._settleTimer = null;
+      this._processQueue();
+    }, CANCEL_SETTLE_MS);
   }
 
   _processQueue() {
-    this._pruneExpired();
+    if (this.current || this._settleTimer) return;
 
-    if (this.queue.length === 0) {
-      this.isSpeaking = false;
-      return;
+    // Drop expired items
+    const cutoff = Date.now() - TTL_MS;
+    const expired = this.queue.filter((q) => q.addedAt < cutoff);
+    if (expired.length) {
+      this.queue = this.queue.filter((q) => q.addedAt >= cutoff);
+      expired.forEach((q) => q.onEnd?.());
     }
 
-    this.isSpeaking = true;
     const item = this.queue.shift();
+    if (!item) return;
 
-    // Resume if paused
-    try {
-      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-    } catch {}
+    const synth = window.speechSynthesis;
+    const token = ++this._token;
+    this.current = { item, token };
+    this._lastSpoken.set(item.text, Date.now());
+    if (this._lastSpoken.size > 40) this._lastSpoken.delete(this._lastSpoken.keys().next().value);
 
     const utterance = new SpeechSynthesisUtterance(item.text);
-    utterance.lang = item.lang || 'ro-RO';
-    utterance.rate = item.rate || 1.0;
-    utterance.pitch = item.pitch || 1.0;
-    this._currentUtterance = utterance;
+    utterance.lang = item.lang;
+    utterance.rate = item.rate;
+    utterance.pitch = item.pitch;
+    const voice = this.getVoice(item.lang);
+    if (voice) utterance.voice = voice;
 
-    if (!this.voices.length) this._loadVoices();
-    const roVoice = this.getRomanianVoice();
-    if (roVoice) utterance.voice = roVoice;
-
-    let finished = false;
+    // Ignore callbacks from utterances that were cancelled or replaced
     const finish = () => {
-      if (finished) return;
-      finished = true;
-      if (this._watchdogTimer) {
-        clearTimeout(this._watchdogTimer);
-        this._watchdogTimer = null;
-      }
-      this._currentUtterance = null;
-      this.isSpeaking = false;
-      if (item.onEnd) {
-        try { item.onEnd(); } catch {}
+      if (!this.current || this.current.token !== token) return;
+      clearTimeout(this._watchdog);
+      this._watchdog = null;
+      this.current = null;
+      try {
+        item.onEnd?.();
+      } catch {
+        /* caller errors must not stall the queue */
       }
       this._processQueue();
     };
 
-    // Watchdog in case mobile Safari drops onend
-    this._watchdogTimer = setTimeout(finish, Math.max(4500, item.text.length * 130));
-
-    // Chain: when this utterance ends, process the next one directly (no setTimeout)
     utterance.onend = finish;
     utterance.onerror = (e) => {
       if (e.error !== 'interrupted' && e.error !== 'canceled') {
-        console.warn('[SpeechQueue] error:', e.error, '—', item.text.slice(0, 40));
+        console.warn('[SpeechQueue] error:', e.error, item.text.slice(0, 40));
       }
       finish();
     };
 
+    // If onend never fires, stop the engine so it cannot talk over the next item
+    clearTimeout(this._watchdog);
+    this._watchdog = setTimeout(() => {
+      try {
+        synth.cancel();
+      } catch {
+        /* ignore */
+      }
+      finish();
+    }, Math.max(4500, item.text.length * 130));
+
     try {
-      window.speechSynthesis.speak(utterance);
+      if (synth.paused) synth.resume();
+      synth.speak(utterance);
     } catch (err) {
       console.warn('[SpeechQueue] speak() threw:', err);
-      this.isSpeaking = false;
-      this._processQueue();
+      finish();
     }
+  }
+
+  /** Stop the utterance in progress without clearing the queue. */
+  _stopCurrent() {
+    const cur = this.current;
+    if (!cur) return;
+    clearTimeout(this._watchdog);
+    this._watchdog = null;
+    this.current = null; // invalidates the token, so its onend/onerror are ignored
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      /* ignore */
+    }
+    cur.item.onEnd?.();
+  }
+
+  _cancelAll() {
+    clearTimeout(this._settleTimer);
+    this._settleTimer = null;
+    const dropped = this.queue;
+    this.queue = [];
+    this._stopCurrent();
+    if (hasSpeech()) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        /* ignore */
+      }
+    }
+    dropped.forEach((q) => q.onEnd?.());
   }
 
   cancel() {
-    this.queue = [];
-    this.isSpeaking = false;
-    if (this._watchdogTimer) {
-      clearTimeout(this._watchdogTimer);
-      this._watchdogTimer = null;
-    }
-    this._currentUtterance = null;
-    try {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    } catch {}
+    this._cancelAll();
   }
-
-  // Stub — backward compat
-  playBeep() {}
 }
 
 export const speechQueue = new SpeechQueueManager();

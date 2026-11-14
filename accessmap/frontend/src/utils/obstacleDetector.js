@@ -80,32 +80,40 @@ function getZone(centerX, frameWidth, prevZone = null) {
   return 'center';
 }
 
+// Continuous (unrounded) estimate. Rounding here would create 0.2-0.5 m steps
+// that look like movement when a bounding box merely jitters across a boundary.
 function estimateDistanceMeters(heightRatio) {
   if (heightRatio <= 0.05) return 8.0;
-  const approx = 1.15 / heightRatio;
-  const clamped = Math.max(0.4, Math.min(8.0, approx));
-  // Quantize gently (0.2m under 2m, 0.5m above 2m) so voice/UI readings stay calm
-  return clamped < 2.0
-    ? Math.round(clamped * 5) / 5
-    : Math.round(clamped * 2) / 2;
+  return Math.max(0.4, Math.min(8.0, 1.15 / heightRatio));
 }
+
+// Quantize for voice/UI only (0.2 m under 2 m, 0.5 m above).
+function formatDistance(meters) {
+  return meters < 2.0 ? Math.round(meters * 5) / 5 : Math.round(meters * 2) / 2;
+}
+
+// Approach tracking: speeds are measured over a window of at least this long,
+// so frame-to-frame bounding box noise cannot register as movement.
+const TREND_WINDOW_MS = 700;
+const APPROACH_SPEED_MPS = 0.4; // closing faster than this counts as approaching
+const FAST_APPROACH_SPEED_MPS = 1.2; // "rapid" approach
+const RECEDE_SPEED_MPS = -0.3;
+const CENTERING_SHIFT_RATIO = 0.05; // lateral shift toward center, fraction of frame width
 
 function ema(prevVal, nextVal, alpha) {
   if (prevVal == null || Number.isNaN(prevVal)) return nextVal;
   return prevVal * (1 - alpha) + nextVal * alpha;
 }
 
-function findPreviousMatch(det, prevObstacles) {
+function findPreviousMatch(det, prevObstacles, claimedIds, maxDist) {
   if (!prevObstacles || prevObstacles.length === 0) return null;
   let best = null;
   let bestDist = Infinity;
 
   for (const prev of prevObstacles) {
-    if (prev.class !== det.class) continue;
-    const dx = det.centerX - prev.centerX;
-    const dy = det.centerY - prev.centerY;
-    const dist = Math.hypot(dx, dy);
-    if (dist < bestDist && dist < 150) {
+    if (prev.class !== det.class || claimedIds.has(prev.id)) continue;
+    const dist = Math.hypot(det.centerX - prev.centerX, det.centerY - prev.centerY);
+    if (dist < bestDist && dist < maxDist) {
       bestDist = dist;
       best = prev;
     }
@@ -478,11 +486,13 @@ export function analyzeDetections(
   frameWidth,
   frameHeight,
   prevObstacles = [],
-  frameSample = null
+  frameSample = null,
+  now = Date.now()
 ) {
   if (!frameWidth || !frameHeight) return [];
 
   const frameArea = frameWidth * frameHeight;
+  const matchRadius = frameWidth * 0.23;
   const matchedPrevIds = new Set();
 
   const currentObstacles = predictions
@@ -505,7 +515,9 @@ export function analyzeDetections(
 
       const prev = findPreviousMatch(
         { class: p.class, centerX: rawCenterX, centerY: rawCenterY },
-        prevObstacles
+        prevObstacles,
+        matchedPrevIds,
+        matchRadius
       );
       if (prev) {
         matchedPrevIds.add(prev.id);
@@ -527,42 +539,40 @@ export function analyzeDetections(
       const inCenterPath =
         x + width > frameWidth * 0.28 && x < frameWidth * 0.72;
 
-      const areaGrowthRate =
-        prev && prev.area > 0 ? (area - prev.area) / prev.area : 0;
-
       const labelRo = OBSTACLE_LABELS_RO[p.class] || p.class;
       const rawDistance = estimateDistanceMeters(heightRatio);
       const smoothedDistance = prev
-        ? ema(prev.rawDistance ?? prev.distanceMeters, rawDistance, 0.3)
+        ? ema(prev.rawDistance, rawDistance, 0.3)
         : rawDistance;
-      const distanceMeters =
-        smoothedDistance < 2.0
-          ? Math.round(smoothedDistance * 5) / 5
-          : Math.round(smoothedDistance * 2) / 2;
+      const distanceMeters = formatDistance(smoothedDistance);
       const zoneRo = ZONE_LABELS_RO[zone];
 
-      // ─── Dynamic Approach & Threat Assessment ─────────────────────────────
-      // Track whether the user is approaching the obstacle (or obstacle is approaching user)
-      const prevDist = prev ? (prev.rawDistance ?? prev.distanceMeters) : null;
-      const distDelta = prevDist != null ? prevDist - smoothedDistance : 0; // > 0 means getting closer
-      const isDistanceClosing = distDelta > 0.05; // >= 5cm closing
-      const isDistanceOpening = distDelta < -0.12; // moving away
-      const isGrowingArea = areaGrowthRate > 0.04;
-      const isShrinkingArea = areaGrowthRate < -0.06;
+      // ─── Approach assessment ──────────────────────────────────────────────
+      // Speed is measured against a reference sample at least TREND_WINDOW_MS old,
+      // in m/s, so a person sitting still (bbox jitter) reads as ~0 instead of "approaching".
+      let trendTime = prev?.trendTime ?? now;
+      let trendDistance = prev?.trendDistance ?? smoothedDistance;
+      let trendCenterX = prev?.trendCenterX ?? centerX;
+      let closingSpeed = prev?.closingSpeed ?? 0;
+      let centeringShift = prev?.centeringShift ?? 0;
 
-      // An object is "approaching" if distance is closing, area is expanding, or within collision range
-      const isApproaching =
-        isDistanceClosing ||
-        isGrowingArea ||
-        (smoothedDistance <= 2.2 && !isDistanceOpening);
+      const elapsed = now - trendTime;
+      if (prev && elapsed >= TREND_WINDOW_MS) {
+        const seconds = elapsed / 1000;
+        closingSpeed = ema(prev.closingSpeed, (trendDistance - smoothedDistance) / seconds, 0.5);
+        centeringShift =
+          (Math.abs(trendCenterX - frameWidth / 2) - Math.abs(centerX - frameWidth / 2)) /
+          frameWidth;
+        trendTime = now;
+        trendDistance = smoothedDistance;
+        trendCenterX = centerX;
+      }
 
-      // An object is receding if distance is increasing AND area is shrinking
-      const isReceding = isDistanceOpening && isShrinkingArea;
-
-      // Check lateral movement towards user's central walking trajectory
-      const isCentering = prev
-        ? Math.abs(centerX - frameWidth / 2) < Math.abs(prev.centerX - frameWidth / 2) - 8
-        : false;
+      const isApproaching = closingSpeed > APPROACH_SPEED_MPS;
+      const isFastApproach = closingSpeed > FAST_APPROACH_SPEED_MPS;
+      const isReceding = closingSpeed < RECEDE_SPEED_MPS;
+      const isCentering = centeringShift > CENTERING_SHIFT_RATIO;
+      const isGrowingArea = isApproaching;
 
       let trafficLightState = null;
       let trafficLightHold = 0;
@@ -609,9 +619,9 @@ export function analyzeDetections(
           if (smoothedDistance <= 2.2) {
             // Immediate collision hazard in forward path
             isThreat = true;
-            threatReason = isApproaching ? 'Te apropii rapid' : 'În calea ta';
+            threatReason = isFastApproach ? 'Te apropii rapid' : isApproaching ? 'Te apropii' : 'În calea ta';
             severity = 'danger';
-          } else if (smoothedDistance <= 5.2 && isApproaching && !isReceding) {
+          } else if (smoothedDistance <= 5.2 && isApproaching) {
             // Approaching obstacle in forward path
             isThreat = true;
             threatReason = 'Te apropii';
@@ -619,7 +629,7 @@ export function analyzeDetections(
           }
         } else {
           // In side corridors (left / right):
-          if (smoothedDistance <= 1.6 && isApproaching && !isReceding) {
+          if (smoothedDistance <= 1.6 && isApproaching) {
             // Close lateral obstacle user might clip with shoulder or wheel
             isThreat = true;
             threatReason = 'Obstacol lateral apropiat';
@@ -631,7 +641,7 @@ export function analyzeDetections(
             severity = 'approaching';
           }
         }
-      } else if (inCenterPath && smoothedDistance <= 1.5 && isApproaching) {
+      } else if (inCenterPath && smoothedDistance <= 1.5) {
         // Ground tripping hazard right in front of feet
         isThreat = true;
         threatReason = 'Obstacol la sol în cale';
@@ -669,9 +679,14 @@ export function analyzeDetections(
         area,
         areaRatio,
         heightRatio,
-        areaGrowthRate,
+        closingSpeed,
+        trendTime,
+        trendDistance,
+        trendCenterX,
+        centeringShift,
         isGrowing: isGrowingArea,
         isApproaching,
+        isFastApproach,
         isReceding,
         isThreat,
         threatReason,
