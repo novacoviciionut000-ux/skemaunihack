@@ -178,7 +178,6 @@ export default function App() {
       // Anunț vocal în limba română la activarea automată a camerei pe traseu (prin coada unificată)
       if (voiceGuidanceEnabled) {
         speechQueue.unlock();
-        speechQueue.playBeep('success');
         const dist = routeData.distanceMeters ? `${Math.round(routeData.distanceMeters)} metri` : '';
         const mins = routeData.timeSeconds ? Math.max(1, Math.round(routeData.timeSeconds / 60)) : '';
         const firstManeuver = steps[0]?.instructionRo || 'Porniți drept înainte pe traseu';

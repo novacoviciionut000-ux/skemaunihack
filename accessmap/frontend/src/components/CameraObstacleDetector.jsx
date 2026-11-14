@@ -52,12 +52,18 @@ const INFERENCE_INTERVAL_MS = 180;
 const ALERT_COOLDOWN_MS = 3000;
 const TILT_VIBRATE_COOLDOWN_MS = 2500;
 const SIDEWALK_EVENT_COOLDOWN_MS = 3500;
-const TILT_UP_ENTER_DEG = 76; // >76 deg means phone is tilted too far upward (sky/horizon instead of sidewalk)
-const TILT_UP_EXIT_DEG = 68;
-const TILT_DOWN_ENTER_DEG = 25; // <25 deg means phone is pointing straight down at feet
+// Tilt thresholds (phone held in portrait, screen facing user, pointing camera forward/down at sidewalk)
+// beta = angle from horizontal: 0° = flat on table, 90° = perfectly vertical
+// Normal walking camera angle: 50°–80° (pointing at ground 1-2m ahead)
+// "Too up" = phone nearly vertical or beyond (pointing at faces/sky): beta > 100°
+// "Too down" = phone nearly flat pointing straight down at feet: beta < 25°
+// "Roll" = sideways tilt: |gamma| > 40°
+const TILT_UP_ENTER_DEG = 100;
+const TILT_UP_EXIT_DEG = 92;
+const TILT_DOWN_ENTER_DEG = 25;
 const TILT_DOWN_EXIT_DEG = 32;
-const TILT_ROLL_ENTER_DEG = 35; // |gamma| > 35 deg means phone is tilted sideways
-const TILT_ROLL_EXIT_DEG = 26;
+const TILT_ROLL_ENTER_DEG = 40;
+const TILT_ROLL_EXIT_DEG = 32;
 
 function playTiltFeedbackTone(audioCtx) {
   if (!audioCtx) return;
@@ -81,7 +87,7 @@ function playTiltFeedbackTone(audioCtx) {
       osc.stop(now + offset + 0.1);
     });
   } catch {
-    // Ignore audio errors if blocked
+    // Non-fatal
   }
 }
 
@@ -145,6 +151,8 @@ export default function CameraObstacleDetector({
   const [sidewalkStatus, setSidewalkStatus] = useState(null);
   const [tiltWarning, setTiltWarning] = useState(false);
   const [tiltMessage, setTiltMessage] = useState('');
+  const [debugBeta, setDebugBeta] = useState(null);
+  const [debugGamma, setDebugGamma] = useState(null);
   const [isRecordingDetour, setIsRecordingDetour] = useState(false);
   const [detourToast, setDetourToast] = useState('');
   const [isSimulatedMode, setIsSimulatedMode] = useState(false);
@@ -198,15 +206,28 @@ export default function CameraObstacleDetector({
       DeviceOrientationEvent.requestPermission().catch(() => {});
     }
 
+    // Unlock Web Audio on user gesture for audio feedback pulse
+    if (!audioCtxRef.current && typeof window !== 'undefined') {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        try {
+          audioCtxRef.current = new AudioCtx();
+        } catch {}
+      }
+    }
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+
     const handleOrientation = (event) => {
       if (event.beta == null) return;
       const state = tiltSmoothedRef.current;
       const rawBeta = event.beta;
       const rawGamma = event.gamma ?? 0;
 
-      // Responsive smoothing (0.4 / 0.6) so changes are detected in real time
-      state.beta = state.beta == null ? rawBeta : state.beta * 0.4 + rawBeta * 0.6;
-      state.gamma = state.gamma == null ? rawGamma : state.gamma * 0.4 + rawGamma * 0.6;
+      // Smooth orientation angles with EMA to ignore hand jitter
+      state.beta = state.beta == null ? rawBeta : state.beta * 0.75 + rawBeta * 0.25;
+      state.gamma = state.gamma == null ? rawGamma : state.gamma * 0.75 + rawGamma * 0.25;
 
       const beta = state.beta;
       const absGamma = Math.abs(state.gamma);
@@ -230,6 +251,8 @@ export default function CameraObstacleDetector({
       state.activeReason = reason;
       const isTilted = Boolean(reason);
       setTiltWarning(isTilted);
+      setDebugBeta(Math.round(beta));
+      setDebugGamma(Math.round(state.gamma));
 
       const now = Date.now();
 
@@ -247,8 +270,7 @@ export default function CameraObstacleDetector({
           if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
             navigator.vibrate([200, 90, 200]);
           }
-          // Instant auditory beep (works on iPhone and mobile even without Romanian TTS voice)
-          speechQueue.playBeep('warning');
+          playTiltFeedbackTone(audioCtxRef.current);
           emitTiltWarningEvent({
             beta: Math.round(beta),
             gamma: Math.round(state.gamma),
@@ -270,7 +292,6 @@ export default function CameraObstacleDetector({
         // Dacă telefonul a fost înclinat și utilizatorul l-a readus în poziție corectă, oferim confirmare audio
         if (lastTiltSpokenRef.current.reason) {
           lastTiltSpokenRef.current = { reason: null, time: now };
-          speechQueue.playBeep('success');
           speechQueue.speak('Poziție corectă a telefonului.', { priority: 'normal' });
         }
       }
@@ -565,7 +586,6 @@ export default function CameraObstacleDetector({
 
             // Audible warning and safe direction correction for visually impaired user
             if (voiceEnabled !== false) {
-              speechQueue.playBeep('urgent');
               speechQueue.speak(sidewalk.correctionRo, { priority: 'urgent' });
             }
             if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
@@ -622,7 +642,6 @@ export default function CameraObstacleDetector({
 
               // Avertizare vocală audio secvențială pentru obstacole și semafoare
               if (!needsSidewalkWarning && voiceEnabled !== false) {
-                speechQueue.playBeep('urgent');
                 speechQueue.speak(primaryThreat.messageRo, { priority: 'high' });
               }
             }
@@ -1164,6 +1183,30 @@ export default function CameraObstacleDetector({
           >
             <Smartphone size={18} style={{ flexShrink: 0 }} />
             <span style={{ flex: 1, lineHeight: 1.3 }}>{tiltMessage || 'Telefonul e înclinat prea în sus! Coboară-l spre trotuar.'}</span>
+          </div>
+        )}
+
+        {/* DEBUG overlay — afișează valorile beta/gamma în timp real */}
+        {isOpen && debugBeta !== null && (
+          <div
+            style={{
+              position: 'absolute',
+              top: tiltWarning ? 76 : 12,
+              right: 12,
+              zIndex: 1500,
+              padding: '5px 10px',
+              borderRadius: 8,
+              background: 'rgba(0,0,0,0.72)',
+              color: '#00ff88',
+              fontSize: 12,
+              fontFamily: 'monospace',
+              fontWeight: 700,
+              lineHeight: 1.5,
+              pointerEvents: 'none',
+            }}
+          >
+            <div>β={debugBeta}°</div>
+            <div>γ={debugGamma}°</div>
           </div>
         )}
 

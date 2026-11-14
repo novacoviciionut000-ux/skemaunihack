@@ -1,25 +1,21 @@
 /**
- * Centralized Speech & Audio Manager for AccessMap
- * Built specifically for mobile browsers (iOS Safari & Android Chrome over Cloudflare / HTTPS).
+ * Centralized Speech Queue for AccessMap
  *
- * Solves:
- * 1. Mobile browser Autoplay / AudioContext restrictions via automatic gesture unlock
- * 2. Missing Romanian TTS voice fallback on mobile devices
- * 3. Web Audio tone synthesizer for instant auditory alerts (tilt, obstacle, navigation)
- * 4. Sequential speech queue with deduplication and watchdog timers
+ * Strategy (simplest approach that works on mobile):
+ * - Use window.speechSynthesis directly — browsers natively queue multiple speak() calls
+ * - NEVER use setTimeout to trigger speak() — breaks mobile autoplay policy
+ * - For interrupt: cancel() then speak() immediately
+ * - Unlock: call a silent speak() directly from touchstart (synchronous, gesture stack)
+ * - No custom FIFO queue — the browser's own queue is reliable enough
  */
 
 class SpeechQueueManager {
   constructor() {
-    this.queue = [];
-    this.isSpeaking = false;
-    this.currentText = '';
-    this.watchdogTimer = null;
     this.voiceEnabled = true;
-    this.audioCtx = null;
-    this.isUnlocked = false;
     this.voices = [];
-    this.activeUtterance = null; // Prevent iOS garbage collection of utterance
+    this._unlocked = false;
+    this._lastText = '';
+    this._lastTime = 0;
 
     if (typeof window !== 'undefined') {
       this._init();
@@ -27,19 +23,19 @@ class SpeechQueueManager {
   }
 
   _init() {
-    // 1. Pre-load TTS voices
     this._loadVoices();
-    if (typeof window.speechSynthesis !== 'undefined' && 'onvoiceschanged' in window.speechSynthesis) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.onvoiceschanged = () => this._loadVoices();
     }
 
-    // 2. Global user gesture listener for instant mobile audio unlock (iOS Safari & Android)
-    const unlockHandler = () => {
+    // Unlock on first user gesture — MUST be synchronous in the event handler
+    const unlockOnce = () => {
+      if (this._unlocked) return;
+      this._unlocked = true;
       this.unlock();
     };
-
-    ['touchstart', 'touchend', 'pointerdown', 'click', 'keydown'].forEach((eventName) => {
-      window.addEventListener(eventName, unlockHandler, { capture: true, passive: true });
+    ['touchstart', 'click', 'keydown'].forEach((evt) => {
+      window.addEventListener(evt, unlockOnce, { capture: true, passive: true, once: false });
     });
   }
 
@@ -52,160 +48,37 @@ class SpeechQueueManager {
     }
   }
 
-  getBestVoice(preferredLang = 'ro-RO') {
-    if (!this.voices || this.voices.length === 0) {
-      this._loadVoices();
-    }
-    const voices = this.voices;
-    if (!voices || voices.length === 0) return null;
-
-    // 1. Direct match for Romanian (ro-RO, ro_RO, ro)
-    const roVoice = voices.find(
-      (v) =>
-        v.lang &&
-        (v.lang.toLowerCase().startsWith('ro') ||
-          v.lang.replace('_', '-').toLowerCase() === 'ro-ro')
+  getRomanianVoice() {
+    if (!this.voices.length) this._loadVoices();
+    return (
+      this.voices.find(
+        (v) =>
+          v.lang &&
+          (v.lang.toLowerCase() === 'ro-ro' ||
+            v.lang.toLowerCase() === 'ro_ro' ||
+            v.lang.toLowerCase().startsWith('ro'))
+      ) || null
     );
-    if (roVoice) return roVoice;
-
-    // 2. Default system voice
-    const defVoice = voices.find((v) => v.default);
-    if (defVoice) return defVoice;
-
-    // 3. First available voice
-    return voices[0] || null;
-  }
-
-  getAudioContext() {
-    if (!this.audioCtx && typeof window !== 'undefined') {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) {
-        try {
-          this.audioCtx = new AudioCtx();
-        } catch (e) {
-          console.warn('Could not create AudioContext:', e);
-        }
-      }
-    }
-    if (this.audioCtx && this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume().catch(() => {});
-    }
-    return this.audioCtx;
   }
 
   /**
-   * Unlock both Web Audio API and SpeechSynthesis on first user gesture.
-   * Mobile browsers (Safari/Chrome) require this to allow background/unprompted speech.
+   * Unlock the speech synthesis engine.
+   * Must be called synchronously from a user-gesture event handler.
+   * Sends a silent utterance to "open" the audio channel on iOS/Android.
    */
   unlock() {
-    if (this.isUnlocked) {
-      // Just ensure audioCtx is resumed if needed
-      if (this.audioCtx && this.audioCtx.state === 'suspended') {
-        this.audioCtx.resume().catch(() => {});
-      }
-      return;
-    }
-
-    this.isUnlocked = true;
-
-    // A. Unlock Web Audio
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
-      const ctx = this.getAudioContext();
-      if (ctx) {
-        if (ctx.state === 'suspended') {
-          ctx.resume().catch(() => {});
-        }
-        // Play an inaudible buffer to prime the hardware
-        const buffer = ctx.createBuffer(1, 1, 22050);
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(ctx.destination);
-        source.start(0);
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
       }
-    } catch (e) {
-      console.warn('AudioContext unlock note:', e);
-    }
-
-    // B. Unlock SpeechSynthesis with micro utterance
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        if (window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
-        }
-        const dummy = new SpeechSynthesisUtterance(' ');
-        dummy.volume = 0.01;
-        dummy.rate = 10;
-        window.speechSynthesis.speak(dummy);
-      } catch (e) {
-        console.warn('SpeechSynthesis unlock note:', e);
-      }
-    }
-  }
-
-  /**
-   * Synthesize audio feedback tones directly using Web Audio oscillator.
-   * Works on 100% of mobile browsers, even if device has no Romanian TTS voice.
-   */
-  playBeep(type = 'warning') {
-    if (!this.voiceEnabled) return;
-    const ctx = this.getAudioContext();
-    if (!ctx) return;
-
-    try {
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
-      const now = ctx.currentTime;
-
-      if (type === 'warning') {
-        // Two distinct low-pitch alert pulses (tilt warning / danger)
-        [0, 0.16].forEach((offset, idx) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'triangle';
-          osc.frequency.setValueAtTime(idx === 0 ? 380 : 280, now + offset);
-          gain.gain.setValueAtTime(0.001, now + offset);
-          gain.gain.exponentialRampToValueAtTime(0.25, now + offset + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.12);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(now + offset);
-          osc.stop(now + offset + 0.13);
-        });
-      } else if (type === 'success') {
-        // High upbeat chime (position corrected / route ready)
-        [0, 0.12].forEach((offset, idx) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(idx === 0 ? 440 : 660, now + offset);
-          gain.gain.setValueAtTime(0.001, now + offset);
-          gain.gain.exponentialRampToValueAtTime(0.2, now + offset + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.1);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(now + offset);
-          osc.stop(now + offset + 0.11);
-        });
-      } else if (type === 'urgent') {
-        // Three sharp beeps for obstacle / sidewalk departure
-        [0, 0.14, 0.28].forEach((offset) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sawtooth';
-          osc.frequency.setValueAtTime(520, now + offset);
-          gain.gain.setValueAtTime(0.001, now + offset);
-          gain.gain.exponentialRampToValueAtTime(0.28, now + offset + 0.015);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.09);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(now + offset);
-          osc.stop(now + offset + 0.1);
-        });
-      }
-    } catch {
-      // Audio errors non-fatal
-    }
+      // Send a truly silent utterance to open the channel
+      const silent = new SpeechSynthesisUtterance('\u200B'); // zero-width space
+      silent.volume = 0;
+      silent.rate = 10;
+      silent.lang = 'ro-RO';
+      window.speechSynthesis.speak(silent);
+    } catch {}
   }
 
   setVoiceEnabled(enabled) {
@@ -219,149 +92,81 @@ class SpeechQueueManager {
     return this.voiceEnabled;
   }
 
+  /**
+   * Speak text.
+   * @param {string} text
+   * @param {object} options
+   *   - interrupt {boolean}: cancel current speech and speak immediately
+   *   - priority {string}: 'urgent'|'high'|'normal' (affects dedup window)
+   *   - rate {number}: speech rate (default 1.0)
+   *   - pitch {number}: pitch (default 1.0)
+   *   - lang {string}: BCP-47 language tag (default 'ro-RO')
+   */
   speak(text, options = {}) {
-    if (!this.voiceEnabled || !text || typeof window === 'undefined') return;
-    if (!('speechSynthesis' in window)) return;
+    if (!this.voiceEnabled) return;
+    if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
     const trimmed = String(text).trim();
     if (!trimmed) return;
 
     const {
-      rate = 1.05,
+      rate = 1.0,
       pitch = 1.0,
       lang = 'ro-RO',
       interrupt = false,
-      priority = 'normal', // 'urgent' | 'high' | 'normal'
     } = options;
 
-    // Deduplication
-    if (this.currentText === trimmed && this.isSpeaking && !interrupt) {
-      return;
-    }
-    if (this.queue.some((item) => item.text === trimmed) && !interrupt) {
-      return;
-    }
+    // Simple deduplication: skip if same text was spoken within 2 seconds
+    const now = Date.now();
+    if (!interrupt && trimmed === this._lastText && now - this._lastTime < 2000) return;
 
     if (interrupt) {
-      this.cancel();
-      this.queue.push({ text: trimmed, rate, pitch, lang, priority });
-      this._processQueue();
-      return;
+      // Cancel all pending speech immediately, then speak
+      try { window.speechSynthesis.cancel(); } catch {}
     }
 
-    // Limit queue size to avoid stale backlog
-    if (this.queue.length >= 3) {
-      this.queue = this.queue.filter((item) => item.priority === 'urgent');
-    }
+    // Update dedup state
+    this._lastText = trimmed;
+    this._lastTime = now;
 
-    this.queue.push({ text: trimmed, rate, pitch, lang, priority });
+    // Resume if paused
+    try {
+      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+    } catch {}
 
-    if (!this.isSpeaking) {
-      this._processQueue();
+    const utterance = new SpeechSynthesisUtterance(trimmed);
+    utterance.lang = lang;
+    utterance.rate = rate;
+    utterance.pitch = pitch;
+
+    // Assign Romanian voice if available
+    if (!this.voices.length) this._loadVoices();
+    const roVoice = this.getRomanianVoice();
+    if (roVoice) utterance.voice = roVoice;
+
+    // Error handler — log but don't stall
+    utterance.onerror = (e) => {
+      if (e.error !== 'interrupted' && e.error !== 'canceled') {
+        console.warn('[SpeechQueue] utterance error:', e.error);
+      }
+    };
+
+    try {
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.warn('[SpeechQueue] speak() threw:', err);
     }
   }
 
   cancel() {
-    this.queue = [];
-    this.isSpeaking = false;
-    this.currentText = '';
-    this.activeUtterance = null;
-    if (this.watchdogTimer) {
-      clearTimeout(this.watchdogTimer);
-      this.watchdogTimer = null;
-    }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        window.speechSynthesis.cancel();
-      } catch {}
-    }
-  }
-
-  _processQueue() {
-    if (this.queue.length === 0) {
-      this.isSpeaking = false;
-      this.currentText = '';
-      this.activeUtterance = null;
-      return;
-    }
-
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      this.queue = [];
-      this.isSpeaking = false;
-      return;
-    }
-
-    const nextItem = this.queue.shift();
-    if (!nextItem) {
-      this.isSpeaking = false;
-      this.currentText = '';
-      return;
-    }
-
-    this.isSpeaking = true;
-    this.currentText = nextItem.text;
-
+    if (typeof window === 'undefined') return;
     try {
-      // Resume if browser suspended speech synthesis (fixes mobile freeze)
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-
-      const utterance = new SpeechSynthesisUtterance(nextItem.text);
-      this.activeUtterance = utterance; // Keep reference to prevent GC on iOS Safari
-
-      const selectedVoice = this.getBestVoice(nextItem.lang || 'ro-RO');
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-        utterance.lang = selectedVoice.lang || 'ro-RO';
-      } else {
-        utterance.lang = nextItem.lang || 'ro-RO';
-      }
-
-      utterance.rate = nextItem.rate || 1.05;
-      utterance.pitch = nextItem.pitch || 1.0;
-
-      const finishAndNext = () => {
-        if (this.watchdogTimer) {
-          clearTimeout(this.watchdogTimer);
-          this.watchdogTimer = null;
-        }
-        this.currentText = '';
-        this.isSpeaking = false;
-        this.activeUtterance = null;
-        setTimeout(() => {
-          this._processQueue();
-        }, 220);
-      };
-
-      utterance.onend = finishAndNext;
-      utterance.onerror = (e) => {
-        console.warn('SpeechSynthesis error:', e);
-        finishAndNext();
-      };
-
-      // Watchdog timer: safety timeout in case Chrome/WebKit fails to fire onend
-      const estDuration = Math.max(2800, nextItem.text.split(' ').length * 500 + 2000);
-      this.watchdogTimer = setTimeout(() => {
-        if (this.isSpeaking && this.currentText === nextItem.text) {
-          finishAndNext();
-        }
-      }, estDuration);
-
-      window.speechSynthesis.speak(utterance);
-
-      // Chrome mobile bug: resume periodically
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-    } catch (err) {
-      console.warn('SpeechSynthesis speak failed:', err);
-      this.isSpeaking = false;
-      this.currentText = '';
-      this.activeUtterance = null;
-      setTimeout(() => this._processQueue(), 200);
-    }
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    } catch {}
   }
+
+  // Stub — kept for backward compatibility with callers
+  playBeep() {}
 }
 
 export const speechQueue = new SpeechQueueManager();
