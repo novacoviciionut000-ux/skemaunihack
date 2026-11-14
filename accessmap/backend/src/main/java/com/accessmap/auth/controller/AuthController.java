@@ -2,8 +2,10 @@ package com.accessmap.auth.controller;
 
 import com.accessmap.auth.dto.*;
 import com.accessmap.auth.service.AuthService;
+import com.accessmap.auth.service.EmailService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -22,9 +24,39 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final EmailService emailService;
 
-    public AuthController(AuthService authService) {
+    @Value("${auth.oauth.google.client-id:mock-google-client-id}")
+    private String googleClientId;
+
+    public AuthController(AuthService authService, EmailService emailService) {
         this.authService = authService;
+        this.emailService = emailService;
+    }
+
+    @GetMapping("/oauth-config")
+    public ResponseEntity<Map<String, Object>> getOAuthConfig() {
+        Map<String, Object> config = new HashMap<>();
+        config.put("googleClientId", googleClientId);
+        config.put("googleConfigured", !googleClientId.equals("mock-google-client-id"));
+        config.put("mailConfigured", emailService.isSmtpConfigured());
+        config.put("mailRecipientLast", emailService.getLastSentRecipient());
+        config.put("mailDeliveryMode", emailService.getLastDeliveryMode());
+        return ResponseEntity.ok(config);
+    }
+
+    @PostMapping("/test-email")
+    public ResponseEntity<Map<String, Object>> testEmail(@RequestBody Map<String, String> body) {
+        String toEmail = body != null ? body.get("toEmail") : null;
+        boolean success = emailService.sendTestEmail(toEmail);
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", success);
+        resp.put("recipient", toEmail);
+        resp.put("deliveryMode", emailService.getLastDeliveryMode());
+        resp.put("message", emailService.isSmtpConfigured()
+                ? "Email de confirmare trimis live prin Gmail SMTP către " + toEmail
+                : "Notificare de securitate generată și logată local pentru " + toEmail + " (Configurează SMTP_PASSWORD pentru livrare live)");
+        return ResponseEntity.ok(resp);
     }
 
     @GetMapping("/check-username")

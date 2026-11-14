@@ -235,6 +235,32 @@ export const authCheckUsername = async (username) => {
     }
 };
 
+/**
+ * GET /api/auth/oauth-config
+ */
+export const authGetOAuthConfig = async () => {
+    try {
+        return await request('/api/auth/oauth-config');
+    } catch (e) {
+        return {
+            googleClientId: 'mock-google-client-id',
+            googleConfigured: false,
+            mailConfigured: false
+        };
+    }
+};
+
+/**
+ * POST /api/auth/test-email
+ */
+export const authTestEmail = async (toEmail) => {
+    return await request('/api/auth/test-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toEmail })
+    });
+};
+
 // ==================== ROUTING & REPORTS API ====================
 
 // Backend Report { id, latitude, longitude, type, description, upvotes, active, authorId, authorName }

@@ -10,6 +10,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $root = $PSScriptRoot
 $backendDir = Join-Path $root 'backend'
 $frontendDir = Join-Path $root 'frontend'
@@ -19,6 +20,27 @@ if (-not (Test-Path $mvnw)) {
     $mvnw = Join-Path $root '..\backend\mvnw.cmd'
 }
 
+# Incarcare variabile de mediu din .env daca exista
+$envFiles = @(
+    (Join-Path $root '.env'),
+    (Join-Path $backendDir '.env'),
+    (Join-Path $frontendDir '.env'),
+    (Join-Path $root '..\.env')
+)
+foreach ($ef in $envFiles) {
+    if (Test-Path $ef) {
+        Write-Host "==> Incarc configurari din $ef" -ForegroundColor Green
+        Get-Content $ef | Where-Object { $_ -match '^\s*([^#=\s]+)\s*=\s*(.*)\s*$' } | ForEach-Object {
+            $k = $matches[1].Trim()
+            $v = $matches[2].Trim()
+            if ($v.StartsWith('"') -and $v.EndsWith('"')) { $v = $v.Substring(1, $v.Length - 2) }
+            if ($v.StartsWith("'") -and $v.EndsWith("'")) { $v = $v.Substring(1, $v.Length - 2) }
+            [Environment]::SetEnvironmentVariable($k, $v, 'Process')
+        }
+        break
+    }
+}
+
 function Info($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Warn($msg) { Write-Host "!!  $msg" -ForegroundColor Yellow }
 function Fail($msg) { Write-Host "XX  $msg" -ForegroundColor Red; exit 1 }
@@ -26,11 +48,20 @@ function Fail($msg) { Write-Host "XX  $msg" -ForegroundColor Red; exit 1 }
 function Wait-Port($port, $name, $timeoutSec) {
     $deadline = (Get-Date).AddSeconds($timeoutSec)
     while ((Get-Date) -lt $deadline) {
-        if (Test-NetConnection localhost -Port $port -InformationLevel Quiet -WarningAction SilentlyContinue) {
-            Info "$name raspunde pe portul $port"
-            return $true
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        try {
+            $iar = $tcp.BeginConnect('127.0.0.1', $port, $null, $null)
+            $wait = $iar.AsyncWaitHandle.WaitOne(1000, $false)
+            if ($wait -and $tcp.Connected) {
+                $tcp.EndConnect($iar)
+                Info "$name raspunde pe portul $port"
+                return $true
+            }
+        } catch {
+        } finally {
+            $tcp.Close()
         }
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 2
     }
     Warn "$name nu raspunde inca pe portul $port (continui oricum)"
     return $false
@@ -121,6 +152,10 @@ if ($hasDocker) {
 } else {
     Warn 'Docker Desktop nu ruleaza sau nu a fost gasit. Sarim peste GraphHopper!'
     Warn 'Autentificarea, baza de date Supabase si interfata web vor functiona normal.'
+}
+
+if ($env:GOOGLE_CLIENT_ID -and -not $env:VITE_GOOGLE_CLIENT_ID) {
+    $env:VITE_GOOGLE_CLIENT_ID = $env:GOOGLE_CLIENT_ID
 }
 
 # ---------- 2. Backend (Spring Boot :8080) ----------
