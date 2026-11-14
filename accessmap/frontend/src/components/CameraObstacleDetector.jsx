@@ -57,7 +57,9 @@ const ALERT_COOLDOWN_MS = 5500;
 const OBSTACLE_ID_REANNOUNCE_MS = 8500;
 const TILT_VIBRATE_COOLDOWN_MS = 2500;
 const SIDEWALK_EVENT_COOLDOWN_MS = 5500;
-const TRAFFIC_LIGHT_COOLDOWN_MS = 6000;
+const TRAFFIC_LIGHT_RED_REMIND_MS = 20000;
+const TRAFFIC_LIGHT_FORGET_MS = 4000;
+const TRAFFIC_LIGHT_STABLE_FRAMES = 3;
 // Tilt thresholds (phone held in portrait, screen facing user, pointing camera forward/down at sidewalk)
 // beta = angle from horizontal: 0° = flat on table, 90° = perfectly vertical
 // Normal walking camera angle: 50°–80° (pointing at ground 1-2m ahead)
@@ -102,7 +104,7 @@ export default function CameraObstacleDetector({
   const prevSidewalkRef = useRef(null);
   const clearFramesRef = useRef(0);
   const spokenObstaclesRef = useRef(new Map());
-  const lastTrafficLightRef = useRef({ state: '', time: 0 });
+  const lastTrafficLightRef = useRef({ state: '', time: 0, lastSeen: 0, pending: '', pendingFrames: 0 });
   const lastTiltVibrateRef = useRef(0);
   const lastTiltSpokenRef = useRef({ reason: null, time: 0 });
   const tiltSmoothedRef = useRef({ beta: null, gamma: null, activeReason: null });
@@ -592,20 +594,40 @@ export default function CameraObstacleDetector({
       drawOverlay(confirmedObstacles, sidewalk, width, height);
       if (notifyUpdate) notifyUpdate(confirmedObstacles);
 
-      // Announce traffic light state changes (including green) separately from obstacle alerts
-      const trafficLight = confirmedObstacles.find(
-        (o) => o.class === 'traffic light' && o.trafficLightState && o.trafficLightState !== 'unknown'
-      );
-      if (
-        trafficLight &&
-        voiceOn !== false &&
-        (trafficLight.trafficLightState !== lastTrafficLightRef.current.state ||
-          now - lastTrafficLightRef.current.time >= TRAFFIC_LIGHT_COOLDOWN_MS)
-      ) {
-        lastTrafficLightRef.current = { state: trafficLight.trafficLightState, time: now };
-        const isRed = trafficLight.trafficLightState === 'red';
-        if (isRed) playAlarmBeep();
-        speechQueue.speak(trafficLight.messageRo, { priority: isRed ? 'danger' : 'high' });
+      // Announce the pedestrian signal only when its state CHANGES and stays stable for a few
+      // frames, plus a slow reminder while it stays red. Prevents flicker/multi-light repeats.
+      const trafficLight = confirmedObstacles
+        .filter((o) => o.class === 'traffic light' && o.missedFrames === 0 && o.trafficLightState && o.trafficLightState !== 'unknown')
+        .sort((a, b) => b.areaRatio - a.areaRatio)[0];
+      const tl = lastTrafficLightRef.current;
+      if (!trafficLight) {
+        tl.pending = '';
+        tl.pendingFrames = 0;
+        // Forget the last announced state after the light has been gone for a while
+        if (tl.state && now - tl.lastSeen >= TRAFFIC_LIGHT_FORGET_MS) {
+          tl.state = '';
+        }
+      } else {
+        tl.lastSeen = now;
+        const state = trafficLight.trafficLightState;
+        if (state === tl.pending) {
+          tl.pendingFrames += 1;
+        } else {
+          tl.pending = state;
+          tl.pendingFrames = 1;
+        }
+        const isStable = tl.pendingFrames >= TRAFFIC_LIGHT_STABLE_FRAMES;
+        const changed = state !== tl.state;
+        const redReminder = state === 'red' && now - tl.time >= TRAFFIC_LIGHT_RED_REMIND_MS;
+        if (isStable && (changed || redReminder)) {
+          tl.state = state;
+          tl.time = now;
+          if (voiceOn !== false) {
+            const isRed = state === 'red';
+            if (isRed) playAlarmBeep();
+            speechQueue.speak(trafficLight.messageRo, { priority: isRed ? 'danger' : 'high' });
+          }
+        }
       }
 
       const primaryThreat = confirmedObstacles.find(

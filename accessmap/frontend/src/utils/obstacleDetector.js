@@ -95,6 +95,17 @@ function formatDistance(meters) {
 // Approach tracking: speeds are measured over a window of at least this long,
 // so frame-to-frame bounding box noise cannot register as movement.
 const TREND_WINDOW_MS = 700;
+
+// Pedestrian-signal filter. COCO-SSD only knows "traffic light", so we tell the two
+// kinds apart by shape and size. Car signals have 3 stacked lamps (tall box, h/w >= ~2.3);
+// pedestrian signals are squarer (2 lamps / one panel, h/w ~ 0.8-2.0).
+const PED_LIGHT_MAX_ASPECT = 2.0; // h/w above this = car signal, ignored
+const PED_LIGHT_MIN_ASPECT = 0.6; // h/w below this = not a signal head (noise)
+const PED_LIGHT_MIN_HEIGHT_RATIO = 0.045; // smaller than this = too far to matter (~6 m)
+const PED_LIGHT_MIN_SCORE = 0.4;
+// Only lights roughly ahead are the ones the user is about to cross at
+const PED_LIGHT_CENTER_MIN = 0.2;
+const PED_LIGHT_CENTER_MAX = 0.8;
 const APPROACH_SPEED_MPS = 0.4; // closing faster than this counts as approaching
 const FAST_APPROACH_SPEED_MPS = 1.2; // "rapid" approach
 const RECEDE_SPEED_MPS = -0.3;
@@ -514,7 +525,14 @@ export function analyzeDetections(
     .filter((p) => {
       // 1. Initial confidence filter (traffic lights are small so allow >= 0.25)
       if (p.class === 'traffic light') {
-        if (p.score < 0.25) return false;
+        if (p.score < PED_LIGHT_MIN_SCORE) return false;
+        const [bx, , bw, bh] = p.bbox;
+        if (bw <= 0 || bh <= 0) return false;
+        const aspect = bh / bw;
+        if (aspect > PED_LIGHT_MAX_ASPECT || aspect < PED_LIGHT_MIN_ASPECT) return false; // car signal
+        if (bh / frameHeight < PED_LIGHT_MIN_HEIGHT_RATIO) return false; // too far
+        const cx = (bx + bw / 2) / frameWidth;
+        if (cx < PED_LIGHT_CENTER_MIN || cx > PED_LIGHT_CENTER_MAX) return false; // not ahead
         return true;
       }
       if (p.score < 0.46) return false;
@@ -685,11 +703,11 @@ export function analyzeDetections(
       let messageRo = `${labelRo} ${zoneRo}, ${distanceMeters} metri.`;
       if (p.class === 'traffic light') {
         if (trafficLightState === 'red') {
-          messageRo = 'Semafor roșu. Oprește!';
+          messageRo = 'Semafor pietoni roșu. Oprește!';
         } else if (trafficLightState === 'yellow') {
-          messageRo = 'Semafor galben.';
+          messageRo = 'Semafor pietoni galben.';
         } else if (trafficLightState === 'green') {
-          messageRo = 'Semafor verde. Liber.';
+          messageRo = 'Semafor pietoni verde. Poți traversa.';
         }
       } else if (severity === 'danger') {
         messageRo = `Atenție! ${labelRo} ${zoneRo}, ${distanceMeters} metri.`;
@@ -734,7 +752,9 @@ export function analyzeDetections(
         isConfirmed: framesSeen >= 2,
         messageRo,
       };
-    });
+    })
+    // A signal with no lit lamp is usually seen from behind/side: not useful, drop it
+    .filter((o) => !(o.class === 'traffic light' && o.trafficLightState === 'unknown'));
 
   // Keep recently confirmed obstacles for up to 2 missed frames for visual continuity,
   // but mark them as non-threatening so they never re-trigger voice alerts after passing
