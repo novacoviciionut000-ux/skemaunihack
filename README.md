@@ -1,7 +1,7 @@
 # unihack-spaimaterminalelor
 
 AccessMap — Documentație Tehnică
-Repository: novacoviciionut000-ux/skemaunihack Commit documentat: f47d0439b3bc28ceaab8112f2af445ff0d0482d9 (14 noiembrie 2026, 82 commit-uri) Generat de: Kiro (AI) pe baza citirii directe a codului sursă
+Repository: novacoviciionut000-ux/skemaunihack Commit documentat: f47d0439b3bc28ceaab8112f2af445ff0d0482d9 (14 noiembrie 2026, 82 commit-uri)
 
 1. Introducere
 AccessMap este o aplicație web de navigare pietonală destinată persoanelor cu dizabilități (nevăzători/slab-văzători, utilizatori de scaun cu rotile, mobilitate limitată), construită în cadrul hackathon-ului UniHack la Timișoara. Combină:
