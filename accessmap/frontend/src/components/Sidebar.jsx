@@ -3,6 +3,8 @@ import ReportButton from './ReportButton';
 import LocationInput from './LocationInput';
 import { MapPin, Flag, RotateCcw, ChevronUp, ChevronDown, Camera, Eye, ShieldCheck } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { speechQueue, unlockAudioContext } from '../utils/speechQueue';
+import { requestOrientationPermission } from '../utils/orientationPermission';
 
 export default function Sidebar({
   profile,
@@ -182,7 +184,12 @@ export default function Sidebar({
             />
             <button
               type="button"
-              onClick={onToggleCamera}
+              onClick={() => {
+                requestOrientationPermission(); // must be first, inside the tap (iOS)
+                unlockAudioContext();
+                speechQueue.unlock(true);
+                onToggleCamera();
+              }}
               aria-pressed={cameraOpen}
               style={{
                 padding: '12px 18px',

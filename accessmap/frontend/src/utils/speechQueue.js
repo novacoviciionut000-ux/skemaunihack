@@ -20,6 +20,11 @@ const PRIORITY_WEIGHT = {
 
 const TTL_MS = 4_000; // Drop queue items older than 4 seconds
 
+const IS_IOS =
+  typeof navigator !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
 // ---------------------------------------------------------------------------
 // Alarm / beep tones (Web Audio) — separate from TTS, plays in parallel
 // ---------------------------------------------------------------------------
@@ -111,6 +116,8 @@ class SpeechQueueManager {
     this._unlocked = false;
     this._currentUtterance = null;
     this._watchdogTimer = null;
+    this._audioEl = null;
+    this._audioUnlocked = false;
 
     if (typeof window !== 'undefined') {
       this._init();
@@ -123,14 +130,14 @@ class SpeechQueueManager {
       window.speechSynthesis.onvoiceschanged = () => this._loadVoices();
     }
 
-    // Unlock on first gesture — synchronous in event handler
+    // Unlock on first valid activation gesture — synchronous in event handler
+    // Note: iOS Safari requires touchend/click (touchstart is often ignored for speechSynthesis)
     const unlockOnce = () => {
       if (this._unlocked) return;
-      this._unlocked = true;
       this.unlock();
       unlockAudioContext();
     };
-    ['touchstart', 'click', 'keydown'].forEach((evt) => {
+    ['touchend', 'click', 'keydown'].forEach((evt) => {
       window.addEventListener(evt, unlockOnce, { capture: true, passive: true });
     });
   }
@@ -152,18 +159,49 @@ class SpeechQueueManager {
     );
   }
 
-  unlock() {
-    if (this._unlocked) return;
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    this._unlocked = true;
+  _getAudioElement() {
+    if (!this._audioEl && typeof Audio !== 'undefined') {
+      this._audioEl = new Audio();
+      this._audioEl.preload = 'auto';
+      this._audioEl.playsInline = true;
+    }
+    return this._audioEl;
+  }
+
+  unlock(force = false) {
+    if (typeof window === 'undefined') return;
+
+    // 1. Unlock HTMLAudioElement for iOS reliable server-backed TTS
+    if (!this._audioUnlocked || force) {
+      try {
+        const audio = this._getAudioElement();
+        if (audio && audio.paused) {
+          // Tiny valid silent WAV so iOS Safari permanently unlocks audio.play()
+          audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+          const p = audio.play();
+          if (p && typeof p.then === 'function') {
+            p.then(() => {
+              this._audioUnlocked = true;
+            }).catch(() => {});
+          } else {
+            this._audioUnlocked = true;
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Unlock Web Speech API as well
+    if (this._unlocked && !force) return;
+    if (!('speechSynthesis' in window)) return;
     try {
-      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-      // Silent utterance to open audio channel on iOS/Android (only once)
-      const silent = new SpeechSynthesisUtterance('\u200B');
-      silent.volume = 0;
-      silent.rate = 10;
-      silent.lang = 'ro-RO';
-      window.speechSynthesis.speak(silent);
+      window.speechSynthesis.resume();
+      if (!window.speechSynthesis.speaking) {
+        const silent = new SpeechSynthesisUtterance('');
+        silent.volume = 0;
+        silent.lang = 'ro-RO';
+        window.speechSynthesis.speak(silent);
+      }
+      this._unlocked = true;
     } catch {}
   }
 
@@ -218,12 +256,15 @@ class SpeechQueueManager {
         (typeof window !== 'undefined' &&
           window.speechSynthesis &&
           (window.speechSynthesis.speaking || window.speechSynthesis.pending));
-      this.cancel();
-      this._enqueue({ text: trimmed, priority, weight, lang, rate, pitch, onEnd });
       if (wasActive) {
-        // iOS Safari & Chrome silently drop speak() if called synchronously right after cancel()
-        setTimeout(() => this._processQueue(), 60);
+        this.cancel();
+        this._enqueue({ text: trimmed, priority, weight, lang, rate, pitch, onEnd });
+        // iOS Safari needs ~150ms after cancel() before speak() works reliably
+        setTimeout(() => this._processQueue(), IS_IOS ? 160 : 60);
       } else {
+        // Avoid calling speechSynthesis.cancel() when idle — it can mute next speak() on iOS
+        this.queue = [];
+        this._enqueue({ text: trimmed, priority, weight, lang, rate, pitch, onEnd });
         this._processQueue();
       }
       return;
@@ -287,25 +328,35 @@ class SpeechQueueManager {
     this.isSpeaking = true;
     const item = this.queue.shift();
 
-    // Resume if paused
+    // Resume unconditionally (iOS Safari can suspend speechSynthesis without setting paused=true)
     try {
-      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+      window.speechSynthesis.resume();
     } catch {}
 
     const utterance = new SpeechSynthesisUtterance(item.text);
     utterance.lang = item.lang || 'ro-RO';
-    utterance.rate = item.rate || 1.0;
+    utterance.rate = IS_IOS ? Math.min(item.rate || 1.0, 1.05) : (item.rate || 1.0);
     utterance.pitch = item.pitch || 1.0;
     this._currentUtterance = utterance;
 
     if (!this.voices.length) this._loadVoices();
     const roVoice = this.getRomanianVoice();
-    if (roVoice) utterance.voice = roVoice;
+    // On iOS, non-local voices can fail silently; only bind local voices or let iOS pick via lang
+    if (roVoice && (!IS_IOS || roVoice.localService !== false)) {
+      utterance.voice = roVoice;
+    }
 
     let finished = false;
+    let started = false;
+    let startCheckTimer = null;
+
     const finish = () => {
       if (finished) return;
       finished = true;
+      if (startCheckTimer) {
+        clearTimeout(startCheckTimer);
+        startCheckTimer = null;
+      }
       if (this._watchdogTimer) {
         clearTimeout(this._watchdogTimer);
         this._watchdogTimer = null;
@@ -318,10 +369,62 @@ class SpeechQueueManager {
       this._processQueue();
     };
 
+    utterance.onstart = () => {
+      started = true;
+    };
+
+    // If iOS hasn't started speaking within 750ms, nudge resume()
+    startCheckTimer = setTimeout(() => {
+      if (!started && !finished) {
+        try { window.speechSynthesis.resume(); } catch {}
+      }
+    }, 750);
+
     // Watchdog in case mobile Safari drops onend
     this._watchdogTimer = setTimeout(finish, Math.max(4500, item.text.length * 130));
 
-    // Chain: when this utterance ends, process the next one directly (no setTimeout)
+    // On iOS Safari, Web Speech API (speechSynthesis) is frequently muted or broken
+    // when getUserMedia camera is active; play via unlocked HTMLAudio + /api/v1/tts first.
+    if (IS_IOS) {
+      const audio = this._getAudioElement();
+      if (audio) {
+        const langCode = (item.lang || 'ro').slice(0, 2).toLowerCase();
+        const ttsUrl = `/api/v1/tts?lang=${encodeURIComponent(langCode)}&text=${encodeURIComponent(item.text)}`;
+        let fellBack = false;
+        const fallbackToSpeechSynth = () => {
+          if (fellBack || finished) return;
+          fellBack = true;
+          audio.onended = null;
+          audio.onerror = null;
+          this._speakViaWebSpeech(utterance, item, finish, () => { started = true; });
+        };
+
+        audio.onended = () => {
+          audio.onended = null;
+          audio.onerror = null;
+          finish();
+        };
+        audio.onerror = fallbackToSpeechSynth;
+        audio.src = ttsUrl;
+        audio.playbackRate = Math.min(item.rate || 1.0, 1.15);
+        try {
+          const playPromise = audio.play();
+          if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(fallbackToSpeechSynth);
+          }
+          return;
+        } catch {
+          fallbackToSpeechSynth();
+          return;
+        }
+      }
+    }
+
+    this._speakViaWebSpeech(utterance, item, finish, () => { started = true; });
+  }
+
+  _speakViaWebSpeech(utterance, item, finish, onStarted) {
+    utterance.onstart = onStarted;
     utterance.onend = finish;
     utterance.onerror = (e) => {
       if (e.error !== 'interrupted' && e.error !== 'canceled') {
@@ -334,9 +437,12 @@ class SpeechQueueManager {
       window.speechSynthesis.speak(utterance);
     } catch (err) {
       console.warn('[SpeechQueue] speak() threw:', err);
-      this.isSpeaking = false;
-      this._processQueue();
+      finish();
     }
+  }
+
+  clearPendingNonDanger() {
+    this.queue = this.queue.filter((item) => item.priority === 'danger');
   }
 
   cancel() {
@@ -347,6 +453,13 @@ class SpeechQueueManager {
       this._watchdogTimer = null;
     }
     this._currentUtterance = null;
+    if (this._audioEl) {
+      try {
+        this._audioEl.onended = null;
+        this._audioEl.onerror = null;
+        this._audioEl.pause();
+      } catch {}
+    }
     try {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
