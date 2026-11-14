@@ -57,6 +57,9 @@ const SEVERITY_COLORS = {
 const INFERENCE_INTERVAL_MS = 180;
 const ALERT_COOLDOWN_MS = 5500;
 const OBSTACLE_ID_REANNOUNCE_MS = 8500;
+// Same kind of obstacle on the same side is not repeated inside this window, however
+// many times the tracker loses and re-acquires it
+const KIND_REPEAT_COOLDOWN_MS = 6000;
 const TILT_VIBRATE_COOLDOWN_MS = 2500;
 const SIDEWALK_EVENT_COOLDOWN_MS = 5500;
 const TRAFFIC_LIGHT_RED_REMIND_MS = 20000;
@@ -109,6 +112,7 @@ export default function CameraObstacleDetector({
   const prevSidewalkRef = useRef(null);
   const clearFramesRef = useRef(0);
   const spokenObstaclesRef = useRef(new Map());
+  const spokenKindsRef = useRef(new Map());
   const lastTrafficLightRef = useRef({ state: '', time: 0, lastSeen: 0, pending: '', pendingFrames: 0 });
   const prevCrosswalkRef = useRef(null);
   const lastCrosswalkRef = useRef({ active: false, time: 0 });
@@ -731,6 +735,24 @@ export default function CameraObstacleDetector({
         primaryThreat.inCenterPath &&
         now - prevSpoken.time >= OBSTACLE_ID_REANNOUNCE_MS;
       if (!isNewObstacle && !escalatedToDanger && !movedMuchCloser && !longElapsed) return;
+
+      // The tracker gives up an obstacle it loses for a few frames and assigns a fresh id
+      // when it reappears, which reads as "new" and repeats the same warning. Hold a
+      // short cooldown per class and side so one person weaving in and out of view is
+      // announced once, not every time the box flickers.
+      const kindKey = `${primaryThreat.class}|${primaryThreat.zone}`;
+      const kindSpoken = spokenKindsRef.current.get(kindKey);
+      if (
+        kindSpoken &&
+        now - kindSpoken.time < KIND_REPEAT_COOLDOWN_MS &&
+        !(primaryThreat.severity === 'danger' && kindSpoken.severity !== 'danger')
+      ) {
+        return;
+      }
+      spokenKindsRef.current.set(kindKey, { severity: primaryThreat.severity, time: now });
+      if (spokenKindsRef.current.size > 24) {
+        spokenKindsRef.current.delete(spokenKindsRef.current.keys().next().value);
+      }
 
       spokenObstaclesRef.current.set(primaryThreat.id, {
         severity: primaryThreat.severity,
