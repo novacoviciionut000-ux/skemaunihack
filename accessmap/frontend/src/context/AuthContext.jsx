@@ -66,6 +66,16 @@ export const AuthProvider = ({ children }) => {
         return updated;
     }, []);
 
+    // Re-reads the profile (e.g. Deed points after a confirmed deed)
+    const refreshUser = useCallback(async () => {
+        try {
+            const fresh = await authGetMe();
+            if (fresh) setUser((prev) => ({ ...prev, ...fresh }));
+        } catch {
+            /* keep the current state */
+        }
+    }, []);
+
     const value = {
         user,
         isAuthenticated: Boolean(user),
@@ -76,6 +86,7 @@ export const AuthProvider = ({ children }) => {
         loginWithOAuth,
         logout,
         updateProfile,
+        refreshUser,
     };
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

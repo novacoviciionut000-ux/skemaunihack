@@ -61,6 +61,17 @@ public class User {
     @Column(name = "last_login_at")
     private LocalDateTime lastLoginAt;
 
+    // Nullable on purpose: added to an existing table, old rows have no value (treated as defaults)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_type", length = 20)
+    private AccountType accountType;
+
+    @Column(name = "deed_points")
+    private Integer deedPoints;
+
+    @Column(name = "deeds_completed")
+    private Integer deedsCompleted;
+
     public User() {
     }
 
@@ -134,4 +145,15 @@ public class User {
 
     public LocalDateTime getLastLoginAt() { return lastLoginAt; }
     public void setLastLoginAt(LocalDateTime lastLoginAt) { this.lastLoginAt = lastLoginAt; }
+
+    public AccountType getAccountType() { return accountType != null ? accountType : AccountType.CLIENT; }
+    public void setAccountType(AccountType accountType) { this.accountType = accountType; }
+
+    public int getDeedPoints() { return deedPoints != null ? deedPoints : 0; }
+    public void setDeedPoints(int deedPoints) { this.deedPoints = deedPoints; }
+
+    public int getDeedsCompleted() { return deedsCompleted != null ? deedsCompleted : 0; }
+    public void setDeedsCompleted(int deedsCompleted) { this.deedsCompleted = deedsCompleted; }
+
+    public boolean isVolunteer() { return getAccountType() == AccountType.VOLUNTEER; }
 }

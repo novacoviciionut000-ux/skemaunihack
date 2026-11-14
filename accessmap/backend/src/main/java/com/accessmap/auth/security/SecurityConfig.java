@@ -1,6 +1,7 @@
 package com.accessmap.auth.security;
 
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -20,6 +21,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -30,8 +32,13 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+    /** Public address(es) of the app, comma-separated, e.g. https://app.domeniu.ro (from .env). */
+    private final String publicOrigins;
+
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
+                          @Value("${app.public-origins:}") String publicOrigins) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.publicOrigins = publicOrigins == null ? "" : publicOrigins;
     }
 
     @Bean
@@ -74,6 +81,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/reports", "/api/reports/*/upvote").permitAll()
                         // 3. Resurse ce necesită autentificare
                         .requestMatchers("/api/auth/me", "/api/auth/profile", "/api/auth/test-email").authenticated()
+                        // 3b. Distress signals, volunteers and Deed points (HelpController)
+                        .requestMatchers("/api/help", "/api/help/**", "/api/volunteers/**").authenticated()
                         // 4. Orice endpoint nelistat explicit este refuzat
                         .anyRequest().denyAll()
                 )
@@ -87,7 +96,18 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         // Permitem originea frontend-ului Vite (implicit portul 3000 sau 5173)
-        configuration.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
+        // Browsers send Origin on every POST. Behind the Vite proxy / Cloudflare tunnel the page and
+        // /api share an address, but the backend only sees that header, so list every address the
+        // app is served from. Without this, every POST from a phone got "403 Invalid CORS request".
+        // (*.trycloudflare.com is on the Public Suffix List, so other tunnels are other sites and
+        // never receive the SameSite=Strict session cookie.)
+        List<String> origins = new ArrayList<>(List.of(
+                "http://localhost:*", "http://127.0.0.1:*", "https://*.trycloudflare.com"));
+        for (String o : publicOrigins.split(",")) {
+            String trimmed = o.trim().replaceAll("/+$", "");
+            if (!trimmed.isEmpty()) origins.add(trimmed);
+        }
+        configuration.setAllowedOriginPatterns(origins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "X-Requested-With"));
         configuration.setAllowCredentials(true);

@@ -1,6 +1,7 @@
 package com.accessmap.auth.service;
 
 import com.accessmap.auth.dto.*;
+import com.accessmap.auth.model.AccountType;
 import com.accessmap.auth.model.AuthProvider;
 import com.accessmap.auth.model.Role;
 import com.accessmap.auth.model.User;
@@ -104,6 +105,9 @@ public class AuthService {
         user.setRole(Role.ROLE_USER);
         user.setProvider(AuthProvider.LOCAL);
         user.setPreferredProfile(StringUtils.hasText(request.getPreferredProfile()) ? request.getPreferredProfile() : "wheelchair");
+        user.setAccountType(AccountType.parse(request.getAccountType()));
+        user.setDeedPoints(0);
+        user.setDeedsCompleted(0);
         user.setEnabled(true);
         user.setCreatedAt(LocalDateTime.now());
         user.setLastLoginAt(LocalDateTime.now());
@@ -311,6 +315,9 @@ public class AuthService {
             user.setAvatarUrl(request.getAvatarUrl());
             user.setRole(Role.ROLE_USER);
             user.setPreferredProfile("wheelchair");
+            user.setAccountType(AccountType.parse(request.getAccountType()));
+            user.setDeedPoints(0);
+            user.setDeedsCompleted(0);
             user.setEnabled(true);
             user.setCreatedAt(LocalDateTime.now());
             user.setLastLoginAt(LocalDateTime.now());
@@ -469,6 +476,10 @@ public class AuthService {
             user.setPreferredProfile(request.getPreferredProfile().trim());
         }
 
+        if (StringUtils.hasText(request.getAccountType())) {
+            user.setAccountType(AccountType.parse(request.getAccountType()));
+        }
+
         // Setare sau schimbare parolă
         if (StringUtils.hasText(request.getNewPassword())) {
             // Dacă avea deja parolă setată, trebuie să o valideze pe cea veche
@@ -506,6 +517,9 @@ public class AuthService {
         dto.setHasFacebook(user.getFacebookId() != null || user.getProvider() == AuthProvider.FACEBOOK);
         dto.setCreatedAt(user.getCreatedAt());
         dto.setLastLoginAt(user.getLastLoginAt());
+        dto.setAccountType(user.getAccountType().name());
+        dto.setDeedPoints(user.getDeedPoints());
+        dto.setDeedsCompleted(user.getDeedsCompleted());
         return dto;
     }
 
@@ -525,6 +539,9 @@ public class AuthService {
         response.setHasPassword(user.getPasswordHash() != null);
         response.setHasGoogle(user.getGoogleId() != null || user.getProvider() == AuthProvider.GOOGLE);
         response.setHasFacebook(user.getFacebookId() != null || user.getProvider() == AuthProvider.FACEBOOK);
+        response.setAccountType(user.getAccountType().name());
+        response.setDeedPoints(user.getDeedPoints());
+        response.setDeedsCompleted(user.getDeedsCompleted());
         response.setEmailSent(true);
         response.setEmailRecipient(user.getEmail());
         response.setEmailDeliveryMode(emailService.getLastDeliveryMode());

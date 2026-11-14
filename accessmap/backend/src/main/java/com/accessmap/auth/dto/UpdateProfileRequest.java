@@ -29,4 +29,10 @@ public class UpdateProfileRequest {
 
     public String getNewPassword() { return newPassword; }
     public void setNewPassword(String newPassword) { this.newPassword = newPassword; }
+
+    /** "CLIENT" (needs help) or "VOLUNTEER" (helps others). */
+    private String accountType;
+
+    public String getAccountType() { return accountType; }
+    public void setAccountType(String accountType) { this.accountType = accountType; }
 }

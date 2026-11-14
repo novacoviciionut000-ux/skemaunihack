@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { speechQueue } from '../utils/speechQueue';
 import { pickBestCommand } from '../utils/voiceCommands';
+import { helpConfirmBridge, emitHelpCommand } from '../utils/helpVoiceBridge';
 
 // Command parsing lives in utils/voiceCommands.js (pure, unit-tested).
 export { normalizeVoiceText } from '../utils/voiceCommands';
@@ -58,14 +59,23 @@ export function useVoiceAssistant({
   // the one that makes sense ("du-mă la Kaufland" over a misheard "du-mă la cauza").
   const processResult = useCallback((alternatives) => {
     const list = Array.isArray(alternatives) ? alternatives : [alternatives];
-    const cmd = pickBestCommand(list, { awaitingConfirmation: awaitingConfirmRef.current });
+    // The help system may be waiting for "da" / "nu" (was the deed really done?)
+    const helpAwaiting = helpConfirmBridge.isAwaiting();
+    const cmd = pickBestCommand(list, { awaitingConfirmation: awaitingConfirmRef.current || helpAwaiting });
 
     switch (cmd.type) {
       case 'confirm-yes':
-        if (onConfirmYes) onConfirmYes();
+        if (helpAwaiting) helpConfirmBridge.answer(true);
+        else if (onConfirmYes) onConfirmYes();
         return;
       case 'confirm-no':
-        if (onConfirmNo) onConfirmNo(cmd.newDestination || null);
+        if (helpAwaiting) helpConfirmBridge.answer(false);
+        else if (onConfirmNo) onConfirmNo(cmd.newDestination || null);
+        return;
+      case 'call-volunteer':
+      case 'cancel-help':
+      case 'deed-finished':
+        emitHelpCommand(cmd.type);
         return;
       case 'emergency':
         speak('Alertă de urgență activată! Se pregătesc coordonatele pentru 112.', { interrupt: true });

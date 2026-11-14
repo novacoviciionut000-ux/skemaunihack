@@ -61,6 +61,15 @@ const NAV_GUIDANCE = [
   'pe unde sa merg', 'start navigare', 'porneste navigarea', 'incepe navigarea', 'incepe ghidarea',
   'navigare pas cu pas', 'pe unde tre sa o iau', 'pe unde trebe sa o iau',
 ];
+// Help system ("buton de ajutor" for clients, deeds for volunteers). "ajutor" alone stays 112.
+const CALL_VOLUNTEER = [
+  'cheama un voluntar', 'cheama voluntar', 'cheama voluntarul', 'am nevoie de un voluntar',
+  'am nevoie de voluntar', 'vreau un voluntar', 'trimite un voluntar', 'cer ajutor', 'cere ajutor',
+  'semnal de ajutor', 'trimite semnal', 'trimite alerta', 'am nevoie de ajutor', 'call a volunteer',
+];
+const CANCEL_HELP = ['anuleaza cererea', 'anuleaza ajutorul', 'anuleaza semnalul', 'nu mai am nevoie de ajutor'];
+const DEED_FINISHED = ['fapta e gata', 'fapta este gata', 'fapta terminata', 'am terminat fapta', 'am terminat', 'am ajutat', 'deed finished'];
+
 export const YES = ['da', 'da te rog', 'confirm', 'confirma', 'corect', 'exact', 'ok', 'bine', 'mergem', 'porneste', 'hai', 'asa e', 'perfect', 'yes'];
 export const NO = ['nu', 'nu e bine', 'anuleaza', 'opreste', 'gresit', 'altceva', 'alta adresa', 'no'];
 
@@ -244,7 +253,8 @@ function destinationFromIntent(words) {
  * @param {{ awaitingConfirmation?: boolean }} [ctx]
  * @returns {{ type: string, transcript: string, destination?: {query, near, knownPlace}, newDestination?: object|null }}
  *   type: confirm-yes | confirm-no | destination | emergency | camera-open | camera-close |
- *         cancel-route | status | start-navigation | unknown
+ *         cancel-route | status | start-navigation | call-volunteer | cancel-help |
+ *         deed-finished | unknown
  */
 export function parseVoiceCommand(transcript, ctx = {}) {
   const text = prepare(transcript);
@@ -263,6 +273,9 @@ export function parseVoiceCommand(transcript, ctx = {}) {
   }
 
   // Control phrases first: "anuleaza ruta" also contains the go-word "ruta"
+  if (hasPhrase(text, CANCEL_HELP)) return result('cancel-help');
+  if (hasPhrase(text, CALL_VOLUNTEER)) return result('call-volunteer');
+  if (hasPhrase(text, DEED_FINISHED)) return result('deed-finished');
   if (hasPhrase(text, CANCEL_ROUTE)) return result('cancel-route');
   if (hasPhrase(text, CAMERA_CLOSE)) return result('camera-close');
   if (hasPhrase(text, CAMERA_OPEN)) return result('camera-open');

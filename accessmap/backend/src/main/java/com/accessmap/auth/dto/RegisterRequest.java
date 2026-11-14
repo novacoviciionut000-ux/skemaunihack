@@ -39,4 +39,10 @@ public class RegisterRequest {
 
     public String getPreferredProfile() { return preferredProfile; }
     public void setPreferredProfile(String preferredProfile) { this.preferredProfile = preferredProfile; }
+
+    /** "CLIENT" (needs help) or "VOLUNTEER" (helps others). */
+    private String accountType;
+
+    public String getAccountType() { return accountType; }
+    public void setAccountType(String accountType) { this.accountType = accountType; }
 }

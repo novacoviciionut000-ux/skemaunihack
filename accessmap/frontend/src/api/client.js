@@ -97,6 +97,30 @@ export const authGetOAuthConfig = async () => {
 /** POST /api/auth/test-email: sends to the logged-in user's own address */
 export const authTestEmail = () => request('/api/auth/test-email', { method: 'POST' });
 
+// ==================== HELP: DISTRESS SIGNAL, VOLUNTEERS, DEED POINTS ====================
+
+/** Client presses the distress button. Pressing again returns the same active request. */
+export const helpCreate = (lat, lng, note = '') =>
+    postJson('/api/help', { latitude: lat, longitude: lng, note: note || null });
+
+/** Client's own active request, or null. */
+export const helpActive = async () => (await request('/api/help/active'))?.asClient || null;
+
+export const helpCancel = (id) => request(`/api/help/${id}/cancel`, { method: 'POST' });
+
+/** Client's answer to "was it really done?". */
+export const helpConfirm = (id, completed) => postJson(`/api/help/${id}/confirm`, { completed });
+
+/** Volunteer heartbeat: sends position, returns points, nearby requests and the active job. */
+export const volunteerPresence = (lat, lng, onDuty) =>
+    postJson('/api/volunteers/presence', { latitude: lat, longitude: lng, onDuty });
+
+export const helpAccept = (id) => request(`/api/help/${id}/accept`, { method: 'POST' });
+export const helpRelease = (id) => request(`/api/help/${id}/release`, { method: 'POST' });
+export const helpFinish = (id) => request(`/api/help/${id}/finish`, { method: 'POST' });
+
+export const volunteerLeaderboard = () => request('/api/volunteers/leaderboard');
+
 // ==================== ROUTING & REPORTS API ====================
 
 // Backend Report { id, latitude, longitude, type, description, upvotes, active, authorId, authorName }

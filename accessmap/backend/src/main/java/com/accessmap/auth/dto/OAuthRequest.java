@@ -32,4 +32,10 @@ public class OAuthRequest {
 
     public String getAvatarUrl() { return avatarUrl; }
     public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+
+    /** Only used when this login creates a new account. */
+    private String accountType;
+
+    public String getAccountType() { return accountType; }
+    public void setAccountType(String accountType) { this.accountType = accountType; }
 }

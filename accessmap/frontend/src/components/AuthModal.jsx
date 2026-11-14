@@ -32,6 +32,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [preferredProfile, setPreferredProfile] = useState('low_vision');
+  const [accountType, setAccountType] = useState('CLIENT'); // 'CLIENT' | 'VOLUNTEER'
 
   // Stare verificare unicitate username în timp real
   const [usernameStatus, setUsernameStatus] = useState('idle'); // 'idle' | 'checking' | 'available' | 'taken' | 'invalid'
@@ -197,6 +198,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
         name: targetName,
         providerId: targetSub,
         avatarUrl: targetAvatar,
+        accountType,
       });
 
       const deliveryNote = user.emailDeliveryMode === 'LIVE_SMTP'
@@ -271,6 +273,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
               name: googleProfile.name,
               avatarUrl: googleProfile.picture,
               providerId: googleProfile.sub,
+              accountType,
             });
 
             setSuccess(`Conectat cu succes ca ${user.fullName || googleProfile.name}!`);
@@ -431,6 +434,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
           password,
           fullName: fullName.trim() || username.trim(),
           preferredProfile,
+          accountType,
         });
 
         setSuccess('Contul tău a fost creat cu succes!');
@@ -1008,6 +1012,43 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                     />
                   </div>
                 </div>
+
+                {/* Register: account type (client asks for help, volunteer helps) */}
+                <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
+                  <legend style={{ fontSize: 12, fontWeight: 600, color: '#334155', marginBottom: 6 }}>
+                    Tip de cont
+                  </legend>
+                  <div role="radiogroup" style={{ display: 'flex', gap: 8 }}>
+                    {[
+                      { id: 'CLIENT', title: 'Am nevoie de ajutor', sub: 'Buton de ajutor care cheamă voluntari' },
+                      { id: 'VOLUNTEER', title: 'Vreau să ajut', sub: 'Primești alerte și puncte de faptă bună' },
+                    ].map((opt) => {
+                      const selected = accountType === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => setAccountType(opt.id)}
+                          style={{
+                            flex: 1,
+                            textAlign: 'left',
+                            padding: '10px 12px',
+                            borderRadius: 12,
+                            border: selected ? '2px solid #2563eb' : '1.5px solid #cbd5e1',
+                            background: selected ? '#eff6ff' : '#ffffff',
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{opt.title}</div>
+                          <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2, lineHeight: 1.3 }}>{opt.sub}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
 
                 {/* Register: Email */}
                 <div>

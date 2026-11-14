@@ -7,6 +7,7 @@ import UserNav from './components/UserNav';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
 import VoiceButton from './components/VoiceButton';
+import HelpCenter from './components/HelpCenter';
 import CameraObstacleDetector from './components/CameraObstacleDetector';
 import NavigationGuidance from './components/NavigationGuidance';
 import { useAuth } from './context/AuthContext';
@@ -386,8 +387,11 @@ export default function App() {
       spokenCrossingsRef.current = {};
       setIsNavigating(true);
       setFollowUser(true);
-      setCameraOpen(true);
-      setCameraFullScreen(true);
+      // Volunteers walking to someone need the map, not the obstacle camera
+      if (user?.accountType !== 'VOLUNTEER') {
+        setCameraOpen(true);
+        setCameraFullScreen(true);
+      }
 
       // Asigură poziție de pornire pentru utilizator dacă nu are deja una activă.
       // Marcată ca estimare: fără un fix GPS real, poziția rămâne blocată aici și
@@ -648,6 +652,17 @@ export default function App() {
       }
     },
     [start, userLocation]
+  );
+
+  // Route from the current position to a point, without touching the travel profile
+  // (used by volunteers heading to someone who asked for help)
+  const handleNavigateTo = useCallback(
+    (dest) => {
+      setDestination({ lat: dest.lat, lng: dest.lng });
+      setCenterTarget({ lat: dest.lat, lng: dest.lng, zoom: 16 });
+      if (userLocation) setStart({ lat: userLocation.lat, lng: userLocation.lng });
+    },
+    [userLocation]
   );
 
   // Center on user GPS position
@@ -939,6 +954,13 @@ export default function App() {
       )}
 
       {/* Camera Obstacle Detector overlay */}
+      {/* Distress signal (clients) and good deeds / Deed points (volunteers) */}
+      <HelpCenter
+        userLocation={userLocation}
+        onNavigateTo={handleNavigateTo}
+        onClearRoute={handleClearRoute}
+      />
+
       <CameraObstacleDetector
         isOpen={cameraOpen}
         onClose={() => setCameraOpen(false)}

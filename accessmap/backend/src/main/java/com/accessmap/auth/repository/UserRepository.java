@@ -32,4 +32,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByUsernameIgnoreCase(String username);
 
     boolean existsByEmailIgnoreCase(String email);
+
+    /** Volunteers with the most Deed points (leaderboard). */
+    @Query("select u from User u where u.accountType = com.accessmap.auth.model.AccountType.VOLUNTEER "
+            + "and u.deedPoints > 0 order by u.deedPoints desc, u.deedsCompleted desc")
+    java.util.List<User> findTopVolunteers(org.springframework.data.domain.Pageable page);
 }

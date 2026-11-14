@@ -50,3 +50,7 @@ mail:
 google:
   maps:
     api-key: "${GOOGLE_MAPS_API_KEY:}"
+
+app:
+  # Public address of the app (your domain), used for CORS. Defaults to the fixed tunnel URL.
+  public-origins: "${APP_PUBLIC_URL:${CLOUDFLARE_TUNNEL_URL:}}"

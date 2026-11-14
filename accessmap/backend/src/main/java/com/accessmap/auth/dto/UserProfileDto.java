@@ -58,4 +58,15 @@ public class UserProfileDto {
 
     public LocalDateTime getLastLoginAt() { return lastLoginAt; }
     public void setLastLoginAt(LocalDateTime lastLoginAt) { this.lastLoginAt = lastLoginAt; }
+
+    private String accountType = "CLIENT";
+    private int deedPoints;
+    private int deedsCompleted;
+
+    public String getAccountType() { return accountType; }
+    public void setAccountType(String accountType) { this.accountType = accountType; }
+    public int getDeedPoints() { return deedPoints; }
+    public void setDeedPoints(int deedPoints) { this.deedPoints = deedPoints; }
+    public int getDeedsCompleted() { return deedsCompleted; }
+    public void setDeedsCompleted(int deedsCompleted) { this.deedsCompleted = deedsCompleted; }
 }

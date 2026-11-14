@@ -19,6 +19,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
 
   const [fullName, setFullName] = useState(user?.fullName || '');
   const [preferredProfile, setPreferredProfile] = useState(user?.preferredProfile || 'low_vision');
+  const [accountType, setAccountType] = useState(user?.accountType || 'CLIENT');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -41,6 +42,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
       const payload = {
         fullName: fullName.trim(),
         preferredProfile,
+        accountType,
       };
 
       if (isLocal && newPassword) {
@@ -229,6 +231,43 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
                 fontFamily: 'inherit',
               }}
             />
+          </div>
+
+          {/* Tip de cont + puncte de faptă bună */}
+          <div style={{ padding: '12px 14px', borderRadius: 12, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Tip de cont</div>
+            <div role="radiogroup" style={{ display: 'flex', gap: 8 }}>
+              {[
+                { id: 'CLIENT', label: 'Am nevoie de ajutor' },
+                { id: 'VOLUNTEER', label: 'Voluntar' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={accountType === opt.id}
+                  onClick={() => setAccountType(opt.id)}
+                  style={{
+                    flex: 1,
+                    padding: '9px 10px',
+                    borderRadius: 10,
+                    border: accountType === opt.id ? '2px solid #2563eb' : '1.5px solid #cbd5e1',
+                    background: accountType === opt.id ? '#eff6ff' : '#ffffff',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {(user.accountType === 'VOLUNTEER' || user.deedPoints > 0) && (
+              <div style={{ marginTop: 8, fontSize: 13, color: '#334155' }}>
+                Puncte de faptă bună: <strong>{user.deedPoints || 0}</strong> · {user.deedsCompleted || 0} fapte confirmate
+              </div>
+            )}
           </div>
 
           {/* Profil preferat */}

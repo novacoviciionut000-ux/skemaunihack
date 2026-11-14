@@ -25,10 +25,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class ApiRateLimitFilter extends OncePerRequestFilter {
 
+    /** A prefix ending in "$" must match the whole path ("/api/help$" is not "/api/help/5/accept"). */
     private record Rule(String name, String method, String prefix, int perMinute) {
         boolean matches(HttpServletRequest req) {
-            return (method == null || method.equalsIgnoreCase(req.getMethod()))
-                    && req.getRequestURI().startsWith(prefix);
+            if (method != null && !method.equalsIgnoreCase(req.getMethod())) return false;
+            String uri = req.getRequestURI();
+            return prefix.endsWith("$") ? uri.equals(prefix.substring(0, prefix.length() - 1)) : uri.startsWith(prefix);
         }
     }
 
@@ -40,6 +42,13 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
             // needs very few: a high count here only exists to stop a loop hammering it
             new Rule("crossings", "GET", "/api/crossings", 30),
             new Rule("report", "POST", "/api/reports", 20),
+            // Limits are per public IP, and phones on the same Wi-Fi share one, so they are sized
+            // for several users at once. Distress: repeat presses return the same request anyway.
+            new Rule("help-create", "POST", "/api/help$", 20),
+            new Rule("help-actions", "POST", "/api/help/", 60),
+            // Volunteer heartbeat every ~8 s, clients poll their request every ~4 s
+            new Rule("presence", "POST", "/api/volunteers/presence", 90),
+            new Rule("help-active", "GET", "/api/help/active", 150),
             new Rule("register", "POST", "/api/auth/register", 5)
     );
 

@@ -90,4 +90,15 @@ public class AuthResponse {
 
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
+
+    private String accountType = "CLIENT";
+    private int deedPoints;
+    private int deedsCompleted;
+
+    public String getAccountType() { return accountType; }
+    public void setAccountType(String accountType) { this.accountType = accountType; }
+    public int getDeedPoints() { return deedPoints; }
+    public void setDeedPoints(int deedPoints) { this.deedPoints = deedPoints; }
+    public int getDeedsCompleted() { return deedsCompleted; }
+    public void setDeedsCompleted(int deedsCompleted) { this.deedsCompleted = deedsCompleted; }
 }
