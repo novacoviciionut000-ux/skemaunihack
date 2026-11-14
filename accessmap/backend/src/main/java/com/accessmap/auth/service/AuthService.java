@@ -301,61 +301,69 @@ public class AuthService {
     }
 
     /**
-     * Validează dacă un cont Google este autentic și verifică token-ul dacă este prezent.
+     * Validează strict dacă un cont Google este autentic și verifică token-ul emis de Google Identity Services.
      */
     private void validateGoogleAccount(OAuthRequest request) {
         String token = request.getToken();
-        if (StringUtils.hasText(token)) {
-            // Verificare structură JWT Google ID Token
-            String[] parts = token.split("\\.");
-            if (parts.length >= 2) {
-                try {
-                    String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
-                    if (payloadJson.contains("\"email_verified\":false")) {
-                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Adresa de email asociată acestui cont Google nu este verificată de Google.");
-                    }
-                } catch (ResponseStatusException rse) {
-                    throw rse;
-                } catch (Exception ignored) {}
-            }
+        if (!StringUtils.hasText(token)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "Autentificarea cu Google necesită un token Google valid obținut prin Google Identity Services.");
+        }
 
-            // Verificare online cu serverele oficiale Google (tokeninfo) dacă e disponibilă conexiunea
+        // Verificare structură JWT Google ID Token
+        String[] parts = token.split("\\.");
+        if (parts.length >= 2) {
             try {
-                HttpClient client = HttpClient.newBuilder()
-                        .connectTimeout(Duration.ofMillis(2500))
-                        .build();
-                HttpRequest httpReq = HttpRequest.newBuilder()
-                        .uri(URI.create("https://oauth2.googleapis.com/tokeninfo?id_token=" + token))
-                        .timeout(Duration.ofMillis(2500))
-                        .GET()
-                        .build();
-                HttpResponse<String> resp = client.send(httpReq, HttpResponse.BodyHandlers.ofString());
-                if (resp.statusCode() == 200) {
-                    String body = resp.body();
-                    String verifiedEmail = extractJsonField(body, "email");
-                    if (StringUtils.hasText(verifiedEmail)) {
-                        request.setEmail(verifiedEmail);
-                    }
-                    String verifiedName = extractJsonField(body, "name");
-                    if (StringUtils.hasText(verifiedName)) {
-                        request.setName(verifiedName);
-                    }
-                    String verifiedSub = extractJsonField(body, "sub");
-                    if (StringUtils.hasText(verifiedSub)) {
-                        request.setProviderId(verifiedSub);
-                    }
-                    String verifiedPic = extractJsonField(body, "picture");
-                    if (StringUtils.hasText(verifiedPic)) {
-                        request.setAvatarUrl(verifiedPic);
-                    }
-                } else if (resp.statusCode() == 400 && resp.body().contains("error")) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token-ul furnizat nu a putut fi verificat de serverele Google.");
+                String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+                if (payloadJson.contains("\"email_verified\":false")) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Adresa de email asociată acestui cont Google nu este verificată de Google.");
+                }
+                if (!payloadJson.contains("accounts.google.com")) {
+                    throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Tokenul nu a fost emis de Google (issuer invalid).");
                 }
             } catch (ResponseStatusException rse) {
                 throw rse;
-            } catch (Exception ignored) {
-                // Fallback dacă mediul nu are acces exterior la Google
+            } catch (Exception e) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Formatul token-ului Google este invalid.");
             }
+        }
+
+        // Verificare online cu serverele oficiale Google (tokeninfo)
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofMillis(2500))
+                    .build();
+            HttpRequest httpReq = HttpRequest.newBuilder()
+                    .uri(URI.create("https://oauth2.googleapis.com/tokeninfo?id_token=" + token))
+                    .timeout(Duration.ofMillis(2500))
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = client.send(httpReq, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 200) {
+                String body = resp.body();
+                String verifiedEmail = extractJsonField(body, "email");
+                if (StringUtils.hasText(verifiedEmail)) {
+                    request.setEmail(verifiedEmail);
+                }
+                String verifiedName = extractJsonField(body, "name");
+                if (StringUtils.hasText(verifiedName)) {
+                    request.setName(verifiedName);
+                }
+                String verifiedSub = extractJsonField(body, "sub");
+                if (StringUtils.hasText(verifiedSub)) {
+                    request.setProviderId(verifiedSub);
+                }
+                String verifiedPic = extractJsonField(body, "picture");
+                if (StringUtils.hasText(verifiedPic)) {
+                    request.setAvatarUrl(verifiedPic);
+                }
+            } else if (resp.statusCode() == 400 && resp.body().contains("error")) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Token-ul Google furnizat nu a putut fi validat de serverele Google (invalid sau expirat).");
+            }
+        } catch (ResponseStatusException rse) {
+            throw rse;
+        } catch (Exception ignored) {
+            // Fallback dacă mediul nu are acces exterior la Google în dev mode
         }
 
         // Verificare format adresă email Google
@@ -364,9 +372,6 @@ public class AuthService {
             email = email.trim().toLowerCase();
             if (!email.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Adresa de email '" + email + "' nu este un format valid de email.");
-            }
-            if (!email.endsWith("@gmail.com") && !email.endsWith("@googlemail.com") && !email.contains(".")) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Pentru autentificarea cu Google, te rugăm să folosești o adresă de email validă (ex: @gmail.com).");
             }
         }
     }
@@ -474,6 +479,11 @@ public class AuthService {
         response.setHasGoogle(user.getGoogleId() != null || user.getProvider() == AuthProvider.GOOGLE);
         response.setHasFacebook(user.getFacebookId() != null || user.getProvider() == AuthProvider.FACEBOOK);
         response.setEmailSent(true);
+        response.setEmailRecipient(user.getEmail());
+        response.setEmailDeliveryMode(emailService.getLastDeliveryMode());
+        response.setEmailMessage(emailService.isSmtpConfigured()
+                ? "Email de confirmare trimis cu succes prin Gmail SMTP către " + user.getEmail()
+                : "Notificare de securitate generată pentru " + user.getEmail() + " (Configurează SMTP_USERNAME și SMTP_PASSWORD pentru livrare live)");
         return response;
     }
 

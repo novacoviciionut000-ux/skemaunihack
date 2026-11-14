@@ -16,6 +16,9 @@ public class AuthResponse {
     private boolean hasGoogle;
     private boolean hasFacebook;
     private boolean emailSent = true;
+    private String emailRecipient;
+    private String emailDeliveryMode;
+    private String emailMessage;
     private String message;
 
     public AuthResponse() {}
@@ -75,6 +78,15 @@ public class AuthResponse {
 
     public boolean isEmailSent() { return emailSent; }
     public void setEmailSent(boolean emailSent) { this.emailSent = emailSent; }
+
+    public String getEmailRecipient() { return emailRecipient; }
+    public void setEmailRecipient(String emailRecipient) { this.emailRecipient = emailRecipient; }
+
+    public String getEmailDeliveryMode() { return emailDeliveryMode; }
+    public void setEmailDeliveryMode(String emailDeliveryMode) { this.emailDeliveryMode = emailDeliveryMode; }
+
+    public String getEmailMessage() { return emailMessage; }
+    public void setEmailMessage(String emailMessage) { this.emailMessage = emailMessage; }
 
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }

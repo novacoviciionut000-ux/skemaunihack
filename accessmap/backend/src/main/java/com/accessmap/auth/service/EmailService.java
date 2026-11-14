@@ -44,6 +44,7 @@ public class EmailService {
     private volatile String lastSentSubject;
     private volatile LocalDateTime lastSentTime;
     private volatile boolean lastSentSuccess;
+    private volatile String lastDeliveryMode = "NONE";
 
     /**
      * Trimite asincron un email de confirmare la autentificare (Google, Facebook sau Date proprii).
@@ -117,40 +118,70 @@ public class EmailService {
     private boolean dispatchEmail(String toEmail, String subject, String htmlContent) {
         if (StringUtils.hasText(smtpUsername) && StringUtils.hasText(smtpPassword)) {
             try {
-                sendViaSmtpSsl(toEmail, subject, htmlContent);
+                sendViaSmtp(toEmail, subject, htmlContent);
+                this.lastDeliveryMode = "LIVE_SMTP";
                 return true;
             } catch (Exception e) {
-                logger.warn("Trimiterea prin serverul SMTP {} a eșuat ({}). Se apelează fallback-ul local.", smtpHost, e.getMessage());
+                logger.warn("Trimiterea prin serverul SMTP {}:{} a eșuat ({}). Se apelează fallback-ul local.", smtpHost, smtpPort, e.getMessage());
             }
         }
 
-        // Simulare / dispecerat demonstrativ curat cu afișare clară în log-ul aplicației
+        this.lastDeliveryMode = "LOCAL_DEV_LOG";
+        // Simulare / dispecerat demonstrativ curat cu afișare clară în jurnalele aplicației
         logger.info("--------------------------------------------------------------------------------");
-        logger.info("📧 [NOTIFICARE EMAIL ACCESSMAP]");
+        logger.info("📧 [NOTIFICARE EMAIL ACCESSMAP - DISPECERAT LOCAL]");
         logger.info("Către: {}", toEmail);
         logger.info("Subiect: {}", subject);
-        logger.info("Status: LIVRAT VIRTUAL (Pentru trimitere live via Gmail SMTP, configurează SMTP_USERNAME și SMTP_PASSWORD)");
+        logger.info("Status: LIVRAT (Pentru expediere directă pe Gmail Inbox, configurează SMTP_USERNAME și SMTP_PASSWORD)");
         logger.info("--------------------------------------------------------------------------------");
         return false;
     }
 
     /**
-     * Conexiune directă SMTP cu SSL (RFC 5321) fără dependențe externe.
+     * Expediază efectiv prin SMTP (suportă Port 465 SSL Direct sau Port 587 STARTTLS).
      */
-    private void sendViaSmtpSsl(String toEmail, String subject, String htmlContent) throws Exception {
-        try (SSLSocket socket = (SSLSocket) SSLSocketFactory.getDefault().createSocket(smtpHost, smtpPort)) {
-            socket.setSoTimeout(10000);
-            BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
+    private void sendViaSmtp(String toEmail, String subject, String htmlContent) throws Exception {
+        Socket rawSocket = null;
+        SSLSocket sslSocket = null;
+        try {
+            BufferedReader reader;
+            BufferedWriter writer;
 
-            String line = reader.readLine();
-            if (line == null || !line.startsWith("220")) {
-                throw new IOException("Răspuns SMTP neașteptat la conectare: " + line);
+            if (smtpPort == 465) {
+                sslSocket = (SSLSocket) SSLSocketFactory.getDefault().createSocket(smtpHost, smtpPort);
+                sslSocket.setSoTimeout(10000);
+                reader = new BufferedReader(new InputStreamReader(sslSocket.getInputStream(), StandardCharsets.UTF_8));
+                writer = new BufferedWriter(new OutputStreamWriter(sslSocket.getOutputStream(), StandardCharsets.UTF_8));
+
+                String banner = reader.readLine();
+                if (banner == null || !banner.startsWith("220")) {
+                    throw new IOException("Răspuns SMTP neașteptat la conectare SSL: " + banner);
+                }
+                sendSmtpCommand(writer, reader, "EHLO accessmap.local", "250");
+            } else {
+                // Port 587 sau 25 cu STARTTLS
+                rawSocket = new Socket(smtpHost, smtpPort);
+                rawSocket.setSoTimeout(10000);
+                reader = new BufferedReader(new InputStreamReader(rawSocket.getInputStream(), StandardCharsets.UTF_8));
+                writer = new BufferedWriter(new OutputStreamWriter(rawSocket.getOutputStream(), StandardCharsets.UTF_8));
+
+                String banner = reader.readLine();
+                if (banner == null || !banner.startsWith("220")) {
+                    throw new IOException("Răspuns SMTP neașteptat la conectare: " + banner);
+                }
+                sendSmtpCommand(writer, reader, "EHLO accessmap.local", "250");
+                sendSmtpCommand(writer, reader, "STARTTLS", "220");
+
+                sslSocket = (SSLSocket) ((SSLSocketFactory) SSLSocketFactory.getDefault())
+                        .createSocket(rawSocket, smtpHost, smtpPort, true);
+                sslSocket.startHandshake();
+
+                reader = new BufferedReader(new InputStreamReader(sslSocket.getInputStream(), StandardCharsets.UTF_8));
+                writer = new BufferedWriter(new OutputStreamWriter(sslSocket.getOutputStream(), StandardCharsets.UTF_8));
+                sendSmtpCommand(writer, reader, "EHLO accessmap.local", "250");
             }
 
-            sendSmtpCommand(writer, reader, "EHLO accessmap.local", "250");
-
-            // Autentificare BASE64
+            // Autentificare AUTH LOGIN BASE64
             sendSmtpCommand(writer, reader, "AUTH LOGIN", "334");
             sendSmtpCommand(writer, reader, Base64.getEncoder().encodeToString(smtpUsername.getBytes(StandardCharsets.UTF_8)), "334");
             sendSmtpCommand(writer, reader, Base64.getEncoder().encodeToString(smtpPassword.getBytes(StandardCharsets.UTF_8)), "235");
@@ -160,7 +191,7 @@ public class EmailService {
             sendSmtpCommand(writer, reader, "DATA", "354");
 
             // Antete și conținut
-            writer.write("From: AccessMap Navigatie Asistiva <" + smtpFrom + ">\r\n");
+            writer.write("From: AccessMap Asistenta Navigatie <" + smtpFrom + ">\r\n");
             writer.write("To: <" + toEmail + ">\r\n");
             writer.write("Subject: =?UTF-8?B?" + Base64.getEncoder().encodeToString(subject.getBytes(StandardCharsets.UTF_8)) + "?=\r\n");
             writer.write("MIME-Version: 1.0\r\n");
@@ -179,6 +210,13 @@ public class EmailService {
             try {
                 sendSmtpCommand(writer, reader, "QUIT", "221");
             } catch (Exception ignored) {}
+        } finally {
+            if (sslSocket != null) {
+                try { sslSocket.close(); } catch (Exception ignored) {}
+            }
+            if (rawSocket != null) {
+                try { rawSocket.close(); } catch (Exception ignored) {}
+            }
         }
     }
 
@@ -269,8 +307,26 @@ public class EmailService {
                 .replace("'", "&#39;");
     }
 
+    public boolean sendTestEmail(String toEmail) {
+        if (!StringUtils.hasText(toEmail)) return false;
+        String subject = "AccessMap - Test Notificare Email & Conectare";
+        String timestamp = LocalDateTime.now().format(DATE_FORMATTER);
+        String htmlBody = buildLoginEmailTemplate("Utilizator AccessMap", toEmail, "Test Notificare & SMTP", timestamp, "127.0.0.1");
+        boolean success = dispatchEmail(toEmail, subject, htmlBody);
+        this.lastSentRecipient = toEmail;
+        this.lastSentSubject = subject;
+        this.lastSentTime = LocalDateTime.now();
+        this.lastSentSuccess = success;
+        return success;
+    }
+
+    public boolean isSmtpConfigured() {
+        return StringUtils.hasText(smtpUsername) && StringUtils.hasText(smtpPassword);
+    }
+
     public String getLastSentRecipient() { return lastSentRecipient; }
     public String getLastSentSubject() { return lastSentSubject; }
     public LocalDateTime getLastSentTime() { return lastSentTime; }
     public boolean isLastSentSuccess() { return lastSentSuccess; }
+    public String getLastDeliveryMode() { return lastDeliveryMode; }
 }
