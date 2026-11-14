@@ -18,7 +18,7 @@ const PRIORITY_WEIGHT = {
   normal: 1,
 };
 
-const TTL_MS = 10_000; // Drop queue items older than 10 seconds
+const TTL_MS = 4_000; // Drop queue items older than 4 seconds
 
 // ---------------------------------------------------------------------------
 // Alarm / beep tones (Web Audio) — separate from TTS, plays in parallel
@@ -189,7 +189,7 @@ class SpeechQueueManager {
     if (!trimmed) return;
 
     const {
-      rate = 1.0,
+      rate = 1.45,
       pitch = 1.0,
       lang = 'ro-RO',
       interrupt = false,
@@ -208,8 +208,8 @@ class SpeechQueueManager {
     // Deduplication: skip if same text already in queue or currently speaking
     if (this.queue.some((item) => item.text === trimmed)) return;
 
-    // Drop low-priority items when queue is full (keep up to 4 items max)
-    if (this.queue.length >= 4) {
+    // Drop low-priority items when queue is full (keep up to 3 items max)
+    if (this.queue.length >= 3) {
       // Remove lowest-priority non-danger item
       const lowestIdx = this._findLowestIndex();
       if (lowestIdx !== -1 && this.queue[lowestIdx].weight < weight) {
