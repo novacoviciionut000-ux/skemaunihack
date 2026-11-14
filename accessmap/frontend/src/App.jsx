@@ -22,8 +22,23 @@ import {
   buildNavigationSteps,
   getLiveGuidanceStatus,
   getBearing,
+  getDistanceMeters,
 } from './utils/navigationEngine';
 import { speechQueue } from './utils/speechQueue';
+import { IS_IOS } from './utils/platform';
+import { fetchCrossingsAlongRoute } from './utils/crossingStore';
+
+// Wrong-way alerting: how long the user must keep walking against the route before
+// being told, and how often the warning may repeat while they still are.
+const WRONG_WAY_CONFIRM_MS = 3500;
+const WRONG_WAY_REPEAT_MS = 12000;
+// A live GPS normally delivers a fix every second or two; past this it has gone quiet
+const GPS_STALE_MS = 15000;
+// Worse than this and the fix cannot support walking guidance
+const GPS_WEAK_ACCURACY_M = 75;
+// Crossing warnings: first on approach, then at the kerb itself
+const CROSSING_APPROACH_M = 35;
+const CROSSING_IMMINENT_M = 10;
 
 export default function App() {
   const { user } = useAuth();
@@ -73,6 +88,35 @@ export default function App() {
   const [voiceGuidanceEnabled, setVoiceGuidanceEnabled] = useState(true);
   const [isSimulating, setIsSimulating] = useState(false);
   const simIndexRef = useRef(0);
+  const segmentIndexRef = useRef(0);
+  const wrongWayRef = useRef({ since: 0, spokenAt: 0 });
+  const gpsWarnedRef = useRef(null);
+  const requestGpsRef = useRef(null);
+  const [isWrongWay, setIsWrongWay] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState({ state: 'unknown', message: '', fixes: 0 });
+  const [crossings, setCrossings] = useState([]);
+  const [crossingAhead, setCrossingAhead] = useState(null);
+  // Which crossings have already been announced, and at which stage.
+  // A plain object on purpose: `Map` in this file is the imported map component, so
+  // `new Map()` would construct that component instead of a JavaScript Map.
+  const spokenCrossingsRef = useRef({});
+
+  // Re-ask for location access from a real tap, which is the only reliable way to raise
+  // the prompt on iOS Safari.
+  const handleRequestGps = useCallback(() => {
+    if (requestGpsRef.current) {
+      requestGpsRef.current();
+      return;
+    }
+    // The watch never started (no geolocation support, or an insecure origin), so there
+    // is nothing to retry and the banner message already explains why.
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      () => window.location.reload(),
+      (err) => console.warn('GPS retry failed:', err.code, err.message),
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }, []);
 
   // Sincronizează starea vocii cu managerul de coadă audio
   useEffect(() => {
@@ -101,38 +145,212 @@ export default function App() {
 
   // Continuous real-time GPS tracking (always active, calculating smooth bearing/heading)
   useEffect(() => {
-    if (!navigator.geolocation) return;
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        setUserLocation((prev) => {
-          const next = {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-            heading: pos.coords.heading ?? prev?.heading ?? null,
-            speed: pos.coords.speed ?? null,
-          };
+    if (!navigator.geolocation) {
+      setGpsStatus({ state: 'unsupported', message: 'Dispozitivul nu oferă GPS.', fixes: 0 });
+      return;
+    }
+    // Browsers block geolocation outside a secure context, so a phone opening the dev
+    // server over plain http://<ip>:3000 silently never receives a single fix.
+    if (typeof window !== 'undefined' && window.isSecureContext === false) {
+      setGpsStatus({
+        state: 'insecure',
+        message: 'GPS blocat: pagina nu este pe HTTPS. Deschide aplicația pe o adresă https.',
+        fixes: 0,
+      });
+      return;
+    }
 
-          // If GPS hardware doesn't provide heading directly, infer it from delta motion
-          if (pos.coords.heading == null && prev) {
-            const dLat = next.lat - prev.lat;
-            const dLng = next.lng - prev.lng;
-            if (Math.hypot(dLat, dLng) > 0.00003) {
-              const brng = getBearing(prev, next);
-              next.heading = Math.round(brng);
-            }
+    let watchId = null;
+    let timeouts = 0;
+    let highAccuracy = true;
+    let stopped = false;
+    let lastFixAt = 0;
+
+    const handlePosition = (pos) => {
+      timeouts = 0;
+      lastFixAt = Date.now();
+      const accuracy = Math.round(pos.coords.accuracy || 0);
+      setGpsStatus((s) => ({
+        // A wifi-derived fix of hundreds of meters is a real position but useless for
+        // walking guidance, so it is reported rather than passed off as good tracking.
+        state: accuracy > GPS_WEAK_ACCURACY_M ? 'weak' : 'live',
+        message:
+          accuracy > GPS_WEAK_ACCURACY_M
+            ? `Semnal slab, precizie ±${accuracy} m. Ieși în aer liber pentru ghidare corectă.`
+            : '',
+        fixes: s.fixes + 1,
+        accuracy,
+        at: pos.timestamp,
+      }));
+      setUserLocation((prev) => {
+        // iOS reports speed and heading as null when stationary, and some versions
+        // report -1 rather than null, which would otherwise read as a real value.
+        const rawSpeed = pos.coords.speed;
+        const rawHeading = pos.coords.heading;
+        const speed = rawSpeed == null || rawSpeed < 0 ? null : rawSpeed;
+        const heading = rawHeading == null || rawHeading < 0 ? null : rawHeading;
+
+        const next = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          heading: heading ?? prev?.heading ?? null,
+          speed,
+        };
+
+        // Course over ground: the direction the user is actually walking, which is what
+        // the wrong-way check needs. The compass only says where the phone points.
+        if (heading != null && (speed ?? 0) >= 0.5) {
+          next.course = heading;
+          next.courseSpeed = speed;
+        } else if (prev && !prev.isFallback) {
+          const moved = getDistanceMeters(prev, next);
+          const elapsed = (pos.timestamp - (prev.timestamp || pos.timestamp)) / 1000;
+          // Require real displacement so GPS scatter while standing still is not a "course"
+          if (moved >= Math.max(6, (pos.coords.accuracy || 15) * 0.5) && elapsed > 0) {
+            next.course = Math.round(getBearing(prev, next));
+            next.courseSpeed = moved / elapsed;
+          } else {
+            next.course = prev.course ?? null;
+            next.courseSpeed = 0;
           }
-          return next;
-        });
-      },
-      (err) => console.warn('Continuous GPS watch warning:', err.message),
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 12000 }
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
+        }
+        if (heading == null && next.course != null) {
+          next.heading = Math.round(next.course);
+        }
+        next.timestamp = pos.timestamp;
+        return next;
+      });
+    };
+
+    const handleError = (err) => {
+      console.warn('GPS watch error:', err.code, err.message);
+
+      // Repeated timeouts on iOS usually mean the high-accuracy fix never arrives.
+      // Dropping to the coarse provider gets a position from wifi/cell instead of none.
+      if (err.code === 3 && highAccuracy && ++timeouts >= 2) {
+        highAccuracy = false;
+        startWatch();
+        return;
+      }
+
+      const messages = {
+        1: IS_IOS
+          ? 'Acces la locație refuzat. Apasă aici pentru a cere din nou. Dacă nu apare nicio întrebare: Reglaje > Confidențialitate > Servicii de localizare (pornit), apoi Reglaje > Safari > Locație: Întreabă.'
+          : 'Acces la locație refuzat. Apasă aici pentru a cere din nou, sau permite locația din setările browserului.',
+        2: IS_IOS
+          ? 'Poziția nu este disponibilă. Verifică Serviciile de localizare și dezactivează Modul consum redus.'
+          : 'Poziția nu este disponibilă. Semnal GPS slab.',
+        3: 'GPS-ul nu a răspuns la timp.',
+      };
+      setGpsStatus((s) => ({
+        ...s,
+        state: s.fixes > 0 ? 'stale' : 'error',
+        message: messages[err.code] || err.message,
+      }));
+    };
+
+    function startWatch() {
+      if (stopped) return;
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+      watchId = navigator.geolocation.watchPosition(handlePosition, handleError, {
+        enableHighAccuracy: highAccuracy,
+        // iOS values kept at what demonstrably worked on these phones before. Setting
+        // maximumAge to 0 made Safari answer TIMEOUT instead of handing over a fix.
+        maximumAge: IS_IOS ? 1000 : 0,
+        timeout: IS_IOS ? 20000 : 15000,
+      });
+    }
+
+    // Exactly one geolocation request at startup. A second, concurrent request while the
+    // permission prompt is still pending makes WebKit answer PERMISSION_DENIED for the
+    // whole origin, which is what stopped iOS from ever getting a fix.
+    startWatch();
+
+    // Asking again from a tap, for after the user changes the setting in Reglaje. Runs the
+    // one-shot and the watch in sequence, never at the same time, for the same reason.
+    requestGpsRef.current = () => {
+      timeouts = 0;
+      highAccuracy = true;
+      setGpsStatus((s) => ({ ...s, state: 'asking', message: 'Se cere accesul la locație...' }));
+      if (watchId != null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          handlePosition(pos);
+          startWatch();
+        },
+        (err) => {
+          handleError(err);
+          startWatch();
+        },
+        { enableHighAccuracy: true, maximumAge: IS_IOS ? 1000 : 0, timeout: IS_IOS ? 20000 : 15000 }
+      );
+    };
+
+    // iOS suspends an active watch when the tab is hidden or the screen locks, and does
+    // not always resume it, which leaves the position frozen. Re-arm it on return, but
+    // only when the fix has actually gone stale: re-arming while the first permission
+    // prompt is still pending would be a second concurrent request.
+    const handleVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!lastFixAt || Date.now() - lastFixAt < GPS_STALE_MS) return;
+      timeouts = 0;
+      highAccuracy = true;
+      startWatch();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      stopped = true;
+      requestGpsRef.current = null;
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+    };
   }, []);
 
-  // Listen to mobile compass orientation to rotate user puck real-time
+  // Flag a GPS that has gone quiet. A frozen position looks identical to standing still,
+  // so the age of the last fix is what distinguishes the two.
   useEffect(() => {
+    if (gpsStatus.state !== 'live' && gpsStatus.state !== 'weak') return;
+    const timer = setInterval(() => {
+      setGpsStatus((s) => {
+        if ((s.state !== 'live' && s.state !== 'weak') || !s.at) return s;
+        if (Date.now() - s.at < GPS_STALE_MS) return s;
+        return { ...s, state: 'stale', message: 'GPS-ul nu mai trimite poziții noi.' };
+      });
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [gpsStatus.state]);
+
+  // Say once, out loud, that position tracking is not actually running. Without this the
+  // route simply never advances and there is nothing on screen explaining why.
+  useEffect(() => {
+    if (!isNavigating) return;
+    // Recovered: allow a later stall to be announced again
+    if (gpsStatus.state === 'live') {
+      gpsWarnedRef.current = null;
+      return;
+    }
+    if (gpsStatus.state === 'unknown') return;
+    if (gpsWarnedRef.current === gpsStatus.state) return;
+    gpsWarnedRef.current = gpsStatus.state;
+    if (voiceGuidanceEnabled) {
+      speechQueue.speak(`Atenție. ${gpsStatus.message} Poziția nu se actualizează.`, {
+        priority: 'urgent',
+      });
+    }
+  }, [gpsStatus.state, gpsStatus.message, isNavigating, voiceGuidanceEnabled]);
+
+  // Listen to mobile compass orientation to rotate user puck real-time.
+  // Throttled on purpose: the event fires ~60x/s and every update used to replace the
+  // userLocation object, which re-ran route projection and re-rendered the camera view
+  // 60x/s and starved the GPS callback.
+  useEffect(() => {
+    let lastApplied = 0;
+    let lastHeading = null;
     const handleOrientation = (e) => {
       const compass =
         e.webkitCompassHeading != null
@@ -140,9 +358,19 @@ export default function App() {
           : e.alpha != null
             ? (360 - e.alpha) % 360
             : null;
-      if (compass != null) {
-        setUserLocation((prev) => (prev ? { ...prev, heading: Math.round(compass) } : prev));
-      }
+      if (compass == null) return;
+
+      const now = Date.now();
+      const rounded = Math.round(compass);
+      const turned =
+        lastHeading == null ? 999 : Math.abs(((rounded - lastHeading + 540) % 360) - 180);
+      if (now - lastApplied < 200 || turned < 3) return;
+
+      lastApplied = now;
+      lastHeading = rounded;
+      setUserLocation((prev) =>
+        prev && prev.heading !== rounded ? { ...prev, heading: rounded } : prev
+      );
     };
     window.addEventListener('deviceorientation', handleOrientation);
     return () => window.removeEventListener('deviceorientation', handleOrientation);
@@ -153,12 +381,17 @@ export default function App() {
     if (routeData && routeData.coordinates && routeData.coordinates.length > 1) {
       const steps = buildNavigationSteps(routeData.coordinates);
       setNavSteps(steps);
+      segmentIndexRef.current = 0;
+      wrongWayRef.current = { since: 0, spokenAt: 0 };
+      spokenCrossingsRef.current = {};
       setIsNavigating(true);
       setFollowUser(true);
       setCameraOpen(true);
       setCameraFullScreen(true);
 
-      // Asigură poziție de pornire pentru utilizator dacă nu are deja una activă
+      // Asigură poziție de pornire pentru utilizator dacă nu are deja una activă.
+      // Marcată ca estimare: fără un fix GPS real, poziția rămâne blocată aici și
+      // distanța rămasă nu s-ar mai schimba niciodată, deci trebuie semnalat.
       setUserLocation((prev) => {
         if (!prev) {
           const origin = routeData.coordinates[0];
@@ -166,7 +399,8 @@ export default function App() {
           return {
             lat: origin[0],
             lng: origin[1],
-            accuracy: 8,
+            accuracy: null,
+            isFallback: true,
             heading: Math.round(getBearing(origin, next)),
             speed: 0,
           };
@@ -197,10 +431,119 @@ export default function App() {
         userLocation,
         steps: navSteps,
         coordinates: routeData.coordinates,
+        course: userLocation.course ?? null,
+        courseSpeedMps: userLocation.courseSpeed ?? null,
+        prevSegmentIndex: segmentIndexRef.current,
       });
+      if (status) segmentIndexRef.current = status.segmentIndex;
       setLiveGuidance(status);
     }
   }, [userLocation, isNavigating, navSteps, routeData]);
+
+  // Warn when the user is walking away from the route instead of along it.
+  // Confirmed over a few seconds so a sidestep, a doorway detour or one noisy GPS
+  // fix does not trigger it. Skipped entirely without trustworthy position tracking.
+  useEffect(() => {
+    if (!isNavigating || !liveGuidance || gpsStatus.state !== 'live') {
+      wrongWayRef.current = { since: 0, spokenAt: 0 };
+      setIsWrongWay(false);
+      return;
+    }
+
+    const now = Date.now();
+    const state = wrongWayRef.current;
+
+    if (!liveGuidance.isWrongWay) {
+      state.since = 0;
+      setIsWrongWay(false);
+      return;
+    }
+
+    if (!state.since) {
+      state.since = now;
+      return;
+    }
+    if (now - state.since < WRONG_WAY_CONFIRM_MS) return;
+
+    setIsWrongWay(true);
+    if (now - state.spokenAt < WRONG_WAY_REPEAT_MS) return;
+    state.spokenAt = now;
+
+    if (voiceGuidanceEnabled) {
+      speechQueue.speak('Mergi în direcția opusă. Întoarce-te.', { priority: 'urgent' });
+    }
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate([200, 100, 200, 100, 200]);
+    }
+  }, [liveGuidance, isNavigating, voiceGuidanceEnabled, gpsStatus.state]);
+
+  // Pedestrian crossings on the route, from OpenStreetMap. Fetched once per route so a
+  // slow lookup never interferes with walking; failure leaves the list empty and the
+  // camera heuristic stays the only source.
+  useEffect(() => {
+    const coords = routeData?.coordinates;
+    if (!coords || coords.length < 2) {
+      setCrossings([]);
+      return;
+    }
+    let cancelled = false;
+    fetchCrossingsAlongRoute(coords)
+      .then((list) => {
+        if (!cancelled) setCrossings(list);
+      })
+      .catch(() => {
+        if (!cancelled) setCrossings([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [routeData]);
+
+  // Announce the crossing ahead: once on approach, then again right at the kerb.
+  // Distance comes from route progress rather than the camera, so the warning arrives
+  // before the crossing is in view.
+  useEffect(() => {
+    if (!isNavigating || !liveGuidance || crossings.length === 0) {
+      setCrossingAhead(null);
+      return;
+    }
+
+    const progress = liveGuidance.progressMeters;
+    // Allow a few meters of slack so a crossing is not dropped by GPS jitter at the kerb
+    const next = crossings.find((c) => c.distanceAlong > progress - 4);
+    if (!next) {
+      setCrossingAhead(null);
+      return;
+    }
+
+    const distance = next.distanceAlong - progress;
+    if (distance > CROSSING_APPROACH_M) {
+      setCrossingAhead(null);
+      return;
+    }
+    setCrossingAhead({ ...next, distanceMeters: Math.max(0, Math.round(distance)) });
+
+    const spoken = spokenCrossingsRef.current;
+    const stage = distance <= CROSSING_IMMINENT_M ? 'imminent' : 'approach';
+    if (spoken[next.id] === stage || (stage === 'approach' && next.id in spoken)) {
+      return;
+    }
+    spoken[next.id] = stage;
+
+    if (voiceGuidanceEnabled) {
+      const label = next.labelRo.charAt(0).toUpperCase() + next.labelRo.slice(1);
+      const message =
+        stage === 'imminent'
+          ? next.hasSignals
+            ? `${label}. Oprește și așteaptă semaforul verde.`
+            : `${label}. Oprește și ascultă traficul înainte să treci.`
+          : `${label} la ${Math.round(distance)} metri.`;
+      speechQueue.speak(message, { priority: stage === 'imminent' ? 'danger' : 'high' });
+    }
+    if (stage === 'imminent' && typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate([250, 120, 250]);
+    }
+  }, [liveGuidance, isNavigating, crossings, voiceGuidanceEnabled]);
 
   // Demo walk simulation along route polyline (advance point-by-point in real time)
   useEffect(() => {
@@ -427,10 +770,65 @@ export default function App() {
         followUser={followUser && isNavigating}
       />
 
+      {/* GPS health banner. Sits above everything because a frozen position makes the
+          whole navigation silently wrong, and nothing else on screen would show it.
+          Tappable: on iOS the permission prompt only appears inside a user gesture. */}
+      {gpsStatus.state !== 'live' && gpsStatus.state !== 'unknown' && (
+        <button
+          type="button"
+          aria-label={`Problemă GPS: ${gpsStatus.message} Apasă pentru a cere din nou accesul la locație.`}
+          onClick={handleRequestGps}
+          style={{
+            position: 'absolute',
+            top: 8,
+            left: 8,
+            right: 8,
+            zIndex: 2000,
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: 'none',
+            textAlign: 'left',
+            background: 'rgba(185, 28, 28, 0.96)',
+            color: '#fef2f2',
+            fontSize: 12,
+            fontWeight: 700,
+            fontFamily: "'Inter', system-ui, sans-serif",
+            boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+            cursor: 'pointer',
+            minHeight: 44,
+            width: 'calc(100% - 16px)',
+          }}
+        >
+          GPS: {gpsStatus.message}
+        </button>
+      )}
+
+      {/* Live GPS readout while navigating, so a stalled fix is visible at a glance */}
+      {isNavigating && gpsStatus.state === 'live' && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 8,
+            left: 8,
+            zIndex: 1990,
+            padding: '4px 8px',
+            borderRadius: 8,
+            background: 'rgba(0,0,0,0.7)',
+            color: '#86efac',
+            fontSize: 11,
+            fontFamily: 'monospace',
+            pointerEvents: 'none',
+          }}
+        >
+          GPS {gpsStatus.fixes} fix · ±{gpsStatus.accuracy}m
+        </div>
+      )}
+
       {/* Real-time Turn-by-Turn Navigation HUD */}
       <NavigationGuidance
         guidance={liveGuidance}
         isNavigating={isNavigating}
+        isWrongWay={isWrongWay}
         onStopNavigation={handleStopNavigation}
         voiceEnabled={voiceGuidanceEnabled}
         onToggleVoice={() => setVoiceGuidanceEnabled((v) => !v)}
@@ -554,6 +952,7 @@ export default function App() {
         onToggleFullScreen={setCameraFullScreen}
         isNavigating={isNavigating}
         guidance={liveGuidance}
+        crossingAhead={crossingAhead}
         voiceEnabled={voiceGuidanceEnabled}
         onToggleVoice={() => setVoiceGuidanceEnabled((v) => !v)}
         isSimulating={isSimulating}

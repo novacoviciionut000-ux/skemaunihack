@@ -34,10 +34,12 @@ import {
   captureFrameSample,
   analyzeDetections,
   analyzeSidewalkPath,
+  detectCrosswalk,
   emitObstacleAlertEvent,
   emitObstaclesClearEvent,
   emitSidewalkStatusEvent,
   emitTiltWarningEvent,
+  emitCrosswalkEvent,
 } from '../utils/obstacleDetector';
 import { distanceMetersBetween } from '../utils/detourStore';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -60,6 +62,8 @@ const SIDEWALK_EVENT_COOLDOWN_MS = 5500;
 const TRAFFIC_LIGHT_RED_REMIND_MS = 20000;
 const TRAFFIC_LIGHT_FORGET_MS = 4000;
 const TRAFFIC_LIGHT_STABLE_FRAMES = 3;
+const CROSSWALK_REPEAT_MS = 15000;
+const CROSSWALK_FORGET_MS = 3000;
 // Tilt thresholds (phone held in portrait, screen facing user, pointing camera forward/down at sidewalk)
 // beta = angle from horizontal: 0° = flat on table, 90° = perfectly vertical
 // Normal walking camera angle: 50°–80° (pointing at ground 1-2m ahead)
@@ -87,6 +91,7 @@ export default function CameraObstacleDetector({
   onToggleFullScreen,
   isNavigating = false,
   guidance = null,
+  crossingAhead = null,
   voiceEnabled = true,
   onToggleVoice,
   isSimulating = false,
@@ -105,6 +110,9 @@ export default function CameraObstacleDetector({
   const clearFramesRef = useRef(0);
   const spokenObstaclesRef = useRef(new Map());
   const lastTrafficLightRef = useRef({ state: '', time: 0, lastSeen: 0, pending: '', pendingFrames: 0 });
+  const prevCrosswalkRef = useRef(null);
+  const lastCrosswalkRef = useRef({ active: false, time: 0 });
+  const lastCrosswalkSigRef = useRef(false);
   const lastTiltVibrateRef = useRef(0);
   const lastTiltSpokenRef = useRef({ reason: null, time: 0 });
   const tiltSmoothedRef = useRef({ beta: null, gamma: null, activeReason: null });
@@ -120,6 +128,8 @@ export default function CameraObstacleDetector({
   // Latest props, readable from the long-lived detection loop without restarting it
   const liveRef = useRef({});
   liveRef.current = { voiceEnabled, onObstacleAlert, onObstaclesUpdate };
+  const crossingAheadRef = useRef(null);
+  crossingAheadRef.current = crossingAhead;
 
   useEffect(() => {
     speechQueue.setVoiceEnabled(voiceEnabled);
@@ -140,6 +150,7 @@ export default function CameraObstacleDetector({
   const [detectedObstacles, setDetectedObstacles] = useState([]);
   const [activeAlert, setActiveAlert] = useState(null);
   const [sidewalkStatus, setSidewalkStatus] = useState(null);
+  const [crosswalkAhead, setCrosswalkAhead] = useState(false);
   const [tiltWarning, setTiltWarning] = useState(false);
   const [tiltMessage, setTiltMessage] = useState('');
   const [orientationPermission, setOrientationPermission] = useState(() =>
@@ -536,7 +547,8 @@ export default function CameraObstacleDetector({
         height,
         prevObstaclesRef.current,
         frameSample,
-        now
+        now,
+        video
       );
       prevObstaclesRef.current = analyzed;
 
@@ -594,11 +606,22 @@ export default function CameraObstacleDetector({
       drawOverlay(confirmedObstacles, sidewalk, width, height);
       if (notifyUpdate) notifyUpdate(confirmedObstacles);
 
-      // Announce the pedestrian signal only when its state CHANGES and stays stable for a few
-      // frames, plus a slow reminder while it stays red. Prevents flicker/multi-light repeats.
-      const trafficLight = confirmedObstacles
-        .filter((o) => o.class === 'traffic light' && o.missedFrames === 0 && o.trafficLightState && o.trafficLightState !== 'unknown')
-        .sort((a, b) => b.areaRatio - a.areaRatio)[0];
+      // Announce the signal only when its state CHANGES and stays stable for a few frames,
+      // plus a slow reminder while a pedestrian light stays red. Prevents flicker repeats.
+      // Pedestrian signals win over car signals even if a car signal looks bigger, because
+      // only the pedestrian one governs the crossing.
+      const visibleLights = confirmedObstacles.filter(
+        (o) =>
+          o.class === 'traffic light' &&
+          o.missedFrames === 0 &&
+          o.trafficLightState &&
+          o.trafficLightState !== 'unknown'
+      );
+      const trafficLight =
+        visibleLights
+          .filter((o) => o.lightKind === 'pedestrian')
+          .sort((a, b) => b.areaRatio - a.areaRatio)[0] ||
+        visibleLights.sort((a, b) => b.areaRatio - a.areaRatio)[0];
       const tl = lastTrafficLightRef.current;
       if (!trafficLight) {
         tl.pending = '';
@@ -609,7 +632,7 @@ export default function CameraObstacleDetector({
         }
       } else {
         tl.lastSeen = now;
-        const state = trafficLight.trafficLightState;
+        const state = `${trafficLight.lightKind}:${trafficLight.trafficLightState}`;
         if (state === tl.pending) {
           tl.pendingFrames += 1;
         } else {
@@ -618,16 +641,48 @@ export default function CameraObstacleDetector({
         }
         const isStable = tl.pendingFrames >= TRAFFIC_LIGHT_STABLE_FRAMES;
         const changed = state !== tl.state;
-        const redReminder = state === 'red' && now - tl.time >= TRAFFIC_LIGHT_RED_REMIND_MS;
+        const isRed =
+          trafficLight.trafficLightState === 'red' && trafficLight.lightKind === 'pedestrian';
+        const redReminder = isRed && now - tl.time >= TRAFFIC_LIGHT_RED_REMIND_MS;
         if (isStable && (changed || redReminder)) {
           tl.state = state;
           tl.time = now;
           if (voiceOn !== false) {
-            const isRed = state === 'red';
             if (isRed) playAlarmBeep();
             speechQueue.speak(trafficLight.messageRo, { priority: isRed ? 'danger' : 'high' });
           }
         }
+      }
+
+      // The map already announces crossings by distance, which is both earlier and more
+      // reliable than reading stripes off the ground. So the camera pass is only used to
+      // confirm the kerb is right here, and it speaks only when the map knows nothing
+      // about this spot, where a cautious "possible crossing" beats saying nothing.
+      const crosswalk = detectCrosswalk(frameSample, prevCrosswalkRef.current);
+      prevCrosswalkRef.current = crosswalk;
+      const mapKnowsCrossing = crossingAheadRef.current != null;
+      const cw = lastCrosswalkRef.current;
+      if (crosswalk.detected) {
+        const pedLightReadable =
+          trafficLight?.lightKind === 'pedestrian' &&
+          trafficLight.trafficLightState !== 'unknown';
+        if (!cw.active || now - cw.time >= CROSSWALK_REPEAT_MS) {
+          cw.active = true;
+          cw.time = now;
+          emitCrosswalkEvent({ ...crosswalk, confirmsMapCrossing: mapKnowsCrossing, timestamp: now });
+          if (voiceOn !== false && !pedLightReadable && !mapKnowsCrossing) {
+            speechQueue.speak(crosswalk.messageRo, { priority: 'high' });
+          }
+          if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+            navigator.vibrate([120, 80, 120]);
+          }
+        }
+      } else if (cw.active && now - cw.time >= CROSSWALK_FORGET_MS) {
+        cw.active = false;
+      }
+      if (crosswalk.detected !== lastCrosswalkSigRef.current) {
+        lastCrosswalkSigRef.current = crosswalk.detected;
+        setCrosswalkAhead(crosswalk.detected);
       }
 
       const primaryThreat = confirmedObstacles.find(
@@ -1294,6 +1349,36 @@ export default function CameraObstacleDetector({
           >
             <div>β={debugBeta}°</div>
             <div>γ={debugGamma}°</div>
+          </div>
+        )}
+
+        {/* Crossing indicator. Map data when the route knows about the crossing, which
+            carries a real distance and whether it has signals; otherwise the camera's
+            own guess, worded as a possibility. */}
+        {cameraActive && (crossingAhead || crosswalkAhead) && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 10,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 1450,
+              padding: '6px 12px',
+              borderRadius: 10,
+              background: crossingAhead
+                ? 'rgba(37, 99, 235, 0.94)'
+                : 'rgba(100, 116, 139, 0.94)',
+              color: '#ffffff',
+              fontSize: 12,
+              fontWeight: 700,
+              textAlign: 'center',
+              boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+              pointerEvents: 'none',
+            }}
+          >
+            {crossingAhead
+              ? `${crossingAhead.hasSignals ? 'Trecere cu semafor' : 'Trecere de pietoni'} · ${crossingAhead.distanceMeters} m`
+              : 'Posibilă trecere de pietoni'}
           </div>
         )}
 

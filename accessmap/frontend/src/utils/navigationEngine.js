@@ -54,6 +54,19 @@ function normalizeAngleDiff(diff) {
   return d - 180;
 }
 
+// How far ahead of the last known position to look when re-projecting the user, and
+// how far off that window they may drift before the whole route is searched again.
+const FORWARD_SEARCH_SEGMENTS = 40;
+const FORWARD_SNAP_TOLERANCE_M = 30;
+
+// Travelling more than this many degrees away from the route direction counts as
+// going the wrong way. 110 deg leaves room for crossing a street diagonally.
+const WRONG_WAY_ANGLE_DEG = 110;
+// Below this speed the GPS course is noise, so direction is not judged at all.
+const MIN_COURSE_SPEED_MPS = 0.5;
+// Above this position error the course is noise too, whatever the speed says.
+const MAX_COURSE_ACCURACY_M = 40;
+
 /**
  * Categorizes a turn angle (in degrees) into a maneuver type and Romanian text.
  */
@@ -158,8 +171,11 @@ export function buildNavigationSteps(coordinates) {
 }
 
 /**
- * Finds the closest point on the route polyline to the given user coordinate,
- * returning the index and distance in meters to the line.
+ * Finds the closest route VERTEX to the given user coordinate.
+ *
+ * Kept for callers that only need a vertex index. Progress along a route should use
+ * `projectOnRoute` instead: vertex distance jumps around as the user passes each
+ * vertex, which made the remaining distance grow while walking forward.
  */
 export function findClosestPointOnRoute(userPos, coordinates) {
   if (!userPos || !coordinates || coordinates.length === 0) {
@@ -184,6 +200,133 @@ export function findClosestPointOnRoute(userPos, coordinates) {
   };
 }
 
+const METERS_PER_DEG_LAT = 111320;
+
+function toLatLng(p) {
+  if (!p) return null;
+  return typeof p.lat === 'number' ? { lat: p.lat, lng: p.lng } : { lat: p[0], lng: p[1] };
+}
+
+/**
+ * Projects a point onto a single segment using a local planar approximation,
+ * returning how far along the segment the projection falls (t in [0,1]) and the
+ * perpendicular distance in meters.
+ */
+function projectOnSegment(p, a, b, cosLat) {
+  const bx = (b.lng - a.lng) * METERS_PER_DEG_LAT * cosLat;
+  const by = (b.lat - a.lat) * METERS_PER_DEG_LAT;
+  const px = (p.lng - a.lng) * METERS_PER_DEG_LAT * cosLat;
+  const py = (p.lat - a.lat) * METERS_PER_DEG_LAT;
+
+  const segLenSq = bx * bx + by * by;
+  let t = segLenSq > 0 ? (px * bx + py * by) / segLenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+
+  return {
+    t,
+    distance: Math.hypot(px - t * bx, py - t * by),
+    segmentLength: Math.sqrt(segLenSq),
+  };
+}
+
+/**
+ * Projects the user onto the closest point of the route polyline, measuring against
+ * the SEGMENTS rather than only the vertices.
+ *
+ * Vertex-only matching is why progress used to stall: between two vertices that are
+ * tens of meters apart, walking forward increases the distance to the vertex behind
+ * just as fast as it shortens the rest of the route, so the remaining distance barely
+ * moved. Projecting onto the segment gives a progress value that always advances.
+ *
+ * `prevIndex` biases the search forward so GPS jitter cannot snap the user back onto
+ * an earlier part of a route that doubles back on itself.
+ */
+export function projectOnRoute(userPos, coordinates, prevIndex = 0) {
+  const user = toLatLng(userPos);
+  if (!user || !coordinates || coordinates.length === 0) {
+    return { segmentIndex: 0, t: 0, distanceOffRoute: 0, point: null, traveledOnSegment: 0 };
+  }
+  if (coordinates.length === 1) {
+    const only = toLatLng(coordinates[0]);
+    return {
+      segmentIndex: 0,
+      t: 0,
+      distanceOffRoute: getDistanceMeters(user, only),
+      point: only,
+      traveledOnSegment: 0,
+    };
+  }
+
+  const cosLat = Math.cos((user.lat * Math.PI) / 180);
+  const lastSegment = coordinates.length - 2;
+  const windowStart = Math.max(0, Math.min(lastSegment, prevIndex - 1));
+  const windowEnd = Math.min(lastSegment, windowStart + FORWARD_SEARCH_SEGMENTS);
+
+  let best = null;
+  let bestInWindow = null;
+
+  for (let i = 0; i <= lastSegment; i++) {
+    const a = toLatLng(coordinates[i]);
+    const b = toLatLng(coordinates[i + 1]);
+    const proj = projectOnSegment(user, a, b, cosLat);
+    const candidate = {
+      segmentIndex: i,
+      t: proj.t,
+      distanceOffRoute: proj.distance,
+      traveledOnSegment: proj.t * proj.segmentLength,
+      point: {
+        lat: a.lat + (b.lat - a.lat) * proj.t,
+        lng: a.lng + (b.lng - a.lng) * proj.t,
+      },
+    };
+    if (!best || candidate.distanceOffRoute < best.distanceOffRoute) {
+      best = candidate;
+    }
+    if (
+      i >= windowStart &&
+      i <= windowEnd &&
+      (!bestInWindow || candidate.distanceOffRoute < bestInWindow.distanceOffRoute)
+    ) {
+      bestInWindow = candidate;
+    }
+  }
+
+  // Stay on the forward window unless the user is clearly nowhere near it anymore
+  if (bestInWindow && bestInWindow.distanceOffRoute <= FORWARD_SNAP_TOLERANCE_M) {
+    return bestInWindow;
+  }
+  return best;
+}
+
+/**
+ * Distance in meters from a projected position to a later vertex, measured ALONG
+ * the polyline instead of in a straight line.
+ */
+function distanceAlongRoute(projection, coordinates, targetIndex) {
+  if (targetIndex <= projection.segmentIndex) {
+    return getDistanceMeters(projection.point, coordinates[targetIndex]);
+  }
+  let total = getDistanceMeters(projection.point, coordinates[projection.segmentIndex + 1]);
+  for (let i = projection.segmentIndex + 1; i < targetIndex; i++) {
+    total += getDistanceMeters(coordinates[i], coordinates[i + 1]);
+  }
+  return total;
+}
+
+/**
+ * Distance in meters from the start of the route to a projected position.
+ * Progress measured this way only ever increases as the user walks forward, so it is
+ * what features along the route (crossings, for instance) are compared against.
+ */
+export function getProgressAlongRoute(projection, coordinates) {
+  if (!projection || !coordinates || coordinates.length < 2) return 0;
+  let total = 0;
+  for (let i = 0; i < projection.segmentIndex; i++) {
+    total += getDistanceMeters(coordinates[i], coordinates[i + 1]);
+  }
+  return total + getDistanceMeters(coordinates[projection.segmentIndex], projection.point);
+}
+
 /**
  * Evaluates real-time progress of the user along the navigation steps.
  * Returns active maneuver, distance to next turn, remaining route distance,
@@ -194,13 +337,23 @@ export function getLiveGuidanceStatus({
   steps,
   coordinates,
   speedMps = 1.2, // ~4.3 km/h pedestrian speed
+  course = null, // direction of travel in degrees, from GPS course over ground
+  courseSpeedMps = null, // measured speed, used to decide if `course` is trustworthy
+  prevSegmentIndex = 0,
 }) {
   if (!userLocation || !steps || steps.length === 0 || !coordinates) {
     return null;
   }
 
-  const { closestIndex, distanceOffRoute } = findClosestPointOnRoute(userLocation, coordinates);
-  const isOffRoute = distanceOffRoute > 40; // >40m deviation
+  const projection = projectOnRoute(userLocation, coordinates, prevSegmentIndex);
+  const distanceOffRoute = Math.round(projection.distanceOffRoute);
+  // Cannot claim someone left the route by less than the position error itself. A coarse
+  // wifi fix of a few hundred meters would otherwise report a constant deviation.
+  const accuracy = userLocation.accuracy || 0;
+  const offRouteThreshold = Math.max(40, accuracy * 1.5);
+  const isOffRoute = distanceOffRoute > offRouteThreshold;
+  // Vertex the user has already reached, used to decide which maneuver is still ahead
+  const closestIndex = projection.segmentIndex;
 
   // Find the upcoming step that lies ahead of the user's current progress
   let activeStepIndex = 0;
@@ -215,16 +368,30 @@ export function getLiveGuidanceStatus({
   const activeStep = steps[activeStepIndex] || steps[steps.length - 1];
   const nextStep = steps[activeStepIndex + 1] || null;
 
-  // Calculate distance remaining to the active maneuver
-  const distToManeuver = Math.round(getDistanceMeters(userLocation, activeStep.coordinate));
-
-  // Calculate total remaining distance from user to destination along the polyline
-  let remainingDist = getDistanceMeters(userLocation, coordinates[closestIndex]);
-  for (let i = closestIndex; i < coordinates.length - 1; i++) {
-    remainingDist += getDistanceMeters(coordinates[i], coordinates[i + 1]);
-  }
-  remainingDist = Math.round(remainingDist);
+  // Distance to the maneuver and to the destination, both measured along the route.
+  // Straight-line distance would shrink and grow again as the user passes each vertex.
+  const distToManeuver = Math.round(
+    distanceAlongRoute(projection, coordinates, activeStep.coordIndex ?? coordinates.length - 1)
+  );
+  const remainingDist = Math.round(
+    distanceAlongRoute(projection, coordinates, coordinates.length - 1)
+  );
   const remainingSeconds = Math.max(1, Math.round(remainingDist / speedMps));
+
+  // Direction the route runs at the user's current position
+  const routeBearing = getBearing(
+    coordinates[projection.segmentIndex],
+    coordinates[Math.min(projection.segmentIndex + 1, coordinates.length - 1)]
+  );
+  const movingFastEnough =
+    courseSpeedMps == null || courseSpeedMps >= MIN_COURSE_SPEED_MPS;
+  // A coarse fix gives a course that is mostly measurement noise, so direction is not judged
+  const accurateEnough = accuracy === 0 || accuracy <= MAX_COURSE_ACCURACY_M;
+  const directionDelta =
+    course != null && movingFastEnough && accurateEnough
+      ? normalizeAngleDiff(course - routeBearing)
+      : null;
+  const isWrongWay = directionDelta != null && Math.abs(directionDelta) > WRONG_WAY_ANGLE_DEG;
 
   // Determine spoken voice prompt based on proximity to maneuver (concise & clear)
   let voicePrompt = null;
@@ -259,5 +426,11 @@ export function getLiveGuidanceStatus({
     isImminent,
     voicePrompt,
     closestIndex,
+    segmentIndex: projection.segmentIndex,
+    progressMeters: Math.round(getProgressAlongRoute(projection, coordinates)),
+    snappedPoint: projection.point,
+    routeBearing: Math.round(routeBearing),
+    directionDelta: directionDelta == null ? null : Math.round(directionDelta),
+    isWrongWay,
   };
 }

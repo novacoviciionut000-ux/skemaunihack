@@ -13,12 +13,9 @@
  *   speechSynthesis if that fails.
  */
 
-const PRIORITY_WEIGHT = { danger: 4, urgent: 3, high: 2, normal: 1 };
+import { IS_IOS } from './platform';
 
-const IS_IOS =
-  typeof navigator !== 'undefined' &&
-  (/iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+const PRIORITY_WEIGHT = { danger: 4, urgent: 3, high: 2, normal: 1 };
 
 const TTL_MS = 4_000;
 const MAX_QUEUE = 3;

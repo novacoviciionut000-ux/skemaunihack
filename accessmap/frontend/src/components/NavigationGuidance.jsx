@@ -50,6 +50,7 @@ export function getManeuverIcon(maneuver, size = 26) {
 export default function NavigationGuidance({
   guidance,
   isNavigating,
+  isWrongWay = false,
   onStopNavigation,
   voiceEnabled,
   onToggleVoice,
@@ -180,6 +181,26 @@ export default function NavigationGuidance({
         >
           <AlertTriangle size={15} />
           <span>Ai deviat de la traseu! Reorientează-te spre trotuarul indicat.</span>
+        </div>
+      )}
+
+      {/* Wrong-direction warning banner */}
+      {isWrongWay && !isOffRoute && (
+        <div
+          role="alert"
+          style={{
+            padding: '7px 12px',
+            background: '#c2410c',
+            color: '#fff7ed',
+            fontSize: 12,
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <AlertTriangle size={15} />
+          <span>Mergi în direcția opusă! Întoarce-te.</span>
         </div>
       )}
 

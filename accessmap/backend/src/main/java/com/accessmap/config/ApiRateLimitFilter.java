@@ -36,6 +36,9 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
             new Rule("tts", "GET", "/api/v1/tts", 60),
             new Rule("route", "GET", "/api/v1/route", 30),
             new Rule("geocode", null, "/api/geocode", 60),
+            // Crossings are cached server-side and fetched once per route, so a device
+            // needs very few: a high count here only exists to stop a loop hammering it
+            new Rule("crossings", "GET", "/api/crossings", 30),
             new Rule("report", "POST", "/api/reports", 20),
             new Rule("register", "POST", "/api/auth/register", 5)
     );

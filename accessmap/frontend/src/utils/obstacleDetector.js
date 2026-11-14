@@ -4,6 +4,25 @@ import * as cocoSsd from '@tensorflow-models/coco-ssd';
 let modelPromise = null;
 let offscreenCanvas = null;
 let offscreenCtx = null;
+let lightCropCanvas = null;
+let lightCropCtx = null;
+
+/**
+ * Small separate canvas for traffic-light crops, so sampling a lamp never disturbs
+ * the full-frame sample used for sidewalk and crosswalk analysis.
+ */
+function getLightCropContext(width, height) {
+  if (typeof document === 'undefined') return null;
+  if (!lightCropCanvas) {
+    lightCropCanvas = document.createElement('canvas');
+    lightCropCtx = lightCropCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  if (lightCropCanvas.width !== width || lightCropCanvas.height !== height) {
+    lightCropCanvas.width = width;
+    lightCropCanvas.height = height;
+  }
+  return lightCropCtx;
+}
 
 /**
  * Loads and caches the COCO-SSD model once for the browser session.
@@ -66,6 +85,13 @@ const ZONE_LABELS_RO = {
   right: 'în dreapta',
 };
 
+const TRAFFIC_COLOR_RO = {
+  red: 'roșu',
+  yellow: 'galben',
+  green: 'verde',
+  unknown: '',
+};
+
 function getZone(centerX, frameWidth, prevZone = null) {
   const ratio = centerX / frameWidth;
   if (prevZone === 'left') {
@@ -96,16 +122,34 @@ function formatDistance(meters) {
 // so frame-to-frame bounding box noise cannot register as movement.
 const TREND_WINDOW_MS = 700;
 
-// Pedestrian-signal filter. COCO-SSD only knows "traffic light", so we tell the two
-// kinds apart by shape and size. Car signals have 3 stacked lamps (tall box, h/w >= ~2.3);
-// pedestrian signals are squarer (2 lamps / one panel, h/w ~ 0.8-2.0).
-const PED_LIGHT_MAX_ASPECT = 2.0; // h/w above this = car signal, ignored
-const PED_LIGHT_MIN_ASPECT = 0.6; // h/w below this = not a signal head (noise)
-const PED_LIGHT_MIN_HEIGHT_RATIO = 0.045; // smaller than this = too far to matter (~6 m)
-const PED_LIGHT_MIN_SCORE = 0.4;
-// Only lights roughly ahead are the ones the user is about to cross at
-const PED_LIGHT_CENTER_MIN = 0.2;
-const PED_LIGHT_CENTER_MAX = 0.8;
+// Telling pedestrian signals from car signals. COCO-SSD only knows one class,
+// "traffic light", so the two kinds are separated by the shape of the box: a car
+// signal stacks 3 lamps and is clearly tall and narrow, a pedestrian signal holds
+// 2 lamps or one panel and is much squarer.
+//
+// These thresholds stay deliberately permissive. A stricter earlier version rejected
+// almost every real signal, so shape now only *labels* a light rather than discarding
+// it, and the spoken message says which kind it is.
+const PED_LIGHT_MAX_ASPECT = 2.2; // h/w at or below this reads as a pedestrian signal
+const CAR_LIGHT_MIN_ASPECT = 2.6; // h/w at or above this reads as a car signal
+const LIGHT_MIN_HEIGHT_RATIO = 0.025; // below this the light is too far to be useful
+const LIGHT_MIN_SCORE = 0.28;
+// Lights far out at the edge of the frame belong to another crossing
+const LIGHT_CENTER_MIN = 0.1;
+const LIGHT_CENTER_MAX = 0.9;
+// Aspect ratio is only trustworthy once the box has some pixels to measure
+const LIGHT_SHAPE_MIN_HEIGHT_PX = 22;
+
+// Zebra crossing pattern thresholds. Deliberately strict: telling a blind user there is
+// a crossing where there is none can put them in the road, so a missed crossing is the
+// safer failure. Stairs are the hardest look-alike and are rejected by brightness level.
+const CROSSWALK_MIN_BANDS = 5; // alternating light/dark stripes needed
+const CROSSWALK_MIN_CONTRAST = 65; // brightness swing between paint and asphalt
+const CROSSWALK_MIN_BRIGHT_LEVEL = 150; // painted stripes are near-white
+const CROSSWALK_MAX_DARK_LEVEL = 110; // asphalt between them is dark
+const CROSSWALK_MIN_EVENNESS = 0.55; // stripes are evenly spaced
+const CROSSWALK_MAX_SATURATION = 0.3; // grey asphalt and white paint, not coloured surfaces
+const CROSSWALK_CONFIRM_FRAMES = 4;
 const APPROACH_SPEED_MPS = 0.4; // closing faster than this counts as approaching
 const FAST_APPROACH_SPEED_MPS = 1.2; // "rapid" approach
 const RECEDE_SPEED_MPS = -0.3;
@@ -150,43 +194,51 @@ export function captureFrameSample(video, sampleWidth = 160, sampleHeight = 120)
 
 /**
  * Classifies the active color of a detected traffic light by inspecting pixels
- * inside its bounding box on the sampled frame.
+ * inside its bounding box.
+ *
+ * Reads the box straight off the video at native resolution rather than from the
+ * downscaled frame sample: a signal 5% of the frame tall is only ~6 px in a 160x120
+ * sample, which is far too few pixels to tell red from green reliably.
  */
-function detectTrafficLightState(bbox, frameWidth, frameHeight, frameSample) {
-  if (!frameSample) return 'unknown';
+function detectTrafficLightState(bbox, frameWidth, frameHeight, frameSample, video) {
+  const crop = cropRegion(video, bbox, frameWidth, frameHeight);
+  const source = crop || cropFromSample(bbox, frameWidth, frameHeight, frameSample);
+  if (!source) return 'unknown';
 
-  const scaleX = frameSample.width / frameWidth;
-  const scaleY = frameSample.height / frameHeight;
-
-  const sx = Math.max(0, Math.floor(bbox[0] * scaleX));
-  const sy = Math.max(0, Math.floor(bbox[1] * scaleY));
-  const sw = Math.max(2, Math.min(frameSample.width - sx, Math.ceil(bbox[2] * scaleX)));
-  const sh = Math.max(2, Math.min(frameSample.height - sy, Math.ceil(bbox[3] * scaleY)));
-
-  const { data, width } = frameSample.imageData;
+  const { data, width, height } = source;
   let redScore = 0;
   let greenScore = 0;
   let yellowScore = 0;
+  let litPixels = 0;
 
-  for (let py = sy; py < sy + sh; py++) {
-    const relY = (py - sy) / sh;
-    for (let px = sx; px < sx + sw; px++) {
+  for (let py = 0; py < height; py++) {
+    const relY = py / height;
+    for (let px = 0; px < width; px++) {
       const idx = (py * width + px) * 4;
       const r = data[idx];
       const g = data[idx + 1];
       const b = data[idx + 2];
 
-      if (r > 135 && r - Math.max(g, b) > 35) {
+      // A lit lamp is both colorful and brighter than the dark signal housing
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      if (max < 90 || max - min < 30) continue;
+      litPixels++;
+
+      if (r > 120 && r - Math.max(g, b) > 30) {
         redScore += relY < 0.5 ? 1.5 : 1;
-      } else if (g > 125 && g - r > 22 && b < 230) {
+      } else if (g > 110 && g - r > 20 && b < 235) {
         greenScore += relY > 0.5 ? 1.5 : 1;
-      } else if (r > 150 && g > 120 && b < 130 && Math.abs(r - g) < 85) {
+      } else if (r > 140 && g > 110 && b < 140 && Math.abs(r - g) < 90) {
         yellowScore += relY >= 0.25 && relY <= 0.75 ? 1.4 : 1;
       }
     }
   }
 
-  const minPixels = Math.max(2, Math.floor((sw * sh) * 0.02));
+  // Require a real cluster of lit pixels, not a few stray colorful ones
+  const minPixels = Math.max(6, Math.floor(width * height * 0.015));
+  if (litPixels < minPixels) return 'unknown';
+
   if (redScore >= minPixels && redScore > greenScore && redScore > yellowScore) {
     return 'red';
   }
@@ -197,6 +249,214 @@ function detectTrafficLightState(bbox, frameWidth, frameHeight, frameSample) {
     return 'yellow';
   }
   return 'unknown';
+}
+
+/**
+ * Draws just the bounding box out of the live video into a small canvas, so the
+ * lamp is examined at the camera's own resolution.
+ */
+function cropRegion(video, bbox, frameWidth, frameHeight) {
+  if (!video || video.readyState < 2) return null;
+  const nativeW = video.videoWidth || frameWidth;
+  const nativeH = video.videoHeight || frameHeight;
+  if (!nativeW || !nativeH) return null;
+
+  const scaleX = nativeW / frameWidth;
+  const scaleY = nativeH / frameHeight;
+  const sx = Math.max(0, Math.floor(bbox[0] * scaleX));
+  const sy = Math.max(0, Math.floor(bbox[1] * scaleY));
+  const sw = Math.min(nativeW - sx, Math.ceil(bbox[2] * scaleX));
+  const sh = Math.min(nativeH - sy, Math.ceil(bbox[3] * scaleY));
+  if (sw < 3 || sh < 3) return null;
+
+  const outW = Math.max(8, Math.min(48, Math.round(sw)));
+  const outH = Math.max(8, Math.min(96, Math.round(sh)));
+  const ctx = getLightCropContext(outW, outH);
+  if (!ctx) return null;
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, outW, outH);
+  const imageData = ctx.getImageData(0, 0, outW, outH);
+  return { data: imageData.data, width: outW, height: outH };
+}
+
+/**
+ * Fallback color source: the already-captured downscaled frame, used when the video
+ * frame itself is not readable.
+ */
+function cropFromSample(bbox, frameWidth, frameHeight, frameSample) {
+  if (!frameSample) return null;
+  const scaleX = frameSample.width / frameWidth;
+  const scaleY = frameSample.height / frameHeight;
+  const sx = Math.max(0, Math.floor(bbox[0] * scaleX));
+  const sy = Math.max(0, Math.floor(bbox[1] * scaleY));
+  const sw = Math.max(2, Math.min(frameSample.width - sx, Math.ceil(bbox[2] * scaleX)));
+  const sh = Math.max(2, Math.min(frameSample.height - sy, Math.ceil(bbox[3] * scaleY)));
+
+  const src = frameSample.imageData;
+  const out = new Uint8ClampedArray(sw * sh * 4);
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      const from = ((sy + y) * src.width + (sx + x)) * 4;
+      const to = (y * sw + x) * 4;
+      out[to] = src.data[from];
+      out[to + 1] = src.data[from + 1];
+      out[to + 2] = src.data[from + 2];
+      out[to + 3] = src.data[from + 3];
+    }
+  }
+  return { data: out, width: sw, height: sh };
+}
+
+/**
+ * Detects a zebra crossing ahead by looking for the alternating bright/dark bands
+ * its stripes make in the lower-center of the frame.
+ *
+ * COCO-SSD has no crosswalk class, so this is pixel analysis, not recognition: the
+ * row-average brightness down the walking corridor is scanned for a regular
+ * oscillation with strong contrast. Painted stripes produce several wide, evenly
+ * spaced swings; plain asphalt or pavers produce almost none.
+ *
+ * Being a pattern heuristic, it can be fooled by stairs, strongly tiled paving or
+ * long shadows across the path, so confirmation over several frames is required
+ * before anything is announced.
+ */
+export function detectCrosswalk(frameSample, prevState = null) {
+  const idle = {
+    detected: false,
+    confidence: 0,
+    bandCount: 0,
+    contrast: 0,
+    candidateFrames: 0,
+    messageRo: '',
+  };
+  if (!frameSample) return idle;
+
+  const { data, width, height } = frameSample.imageData;
+  // Lower-center corridor: the stretch of ground the user is about to step onto
+  const yStart = Math.floor(height * 0.55);
+  const yEnd = Math.floor(height * 0.97);
+  const xStart = Math.floor(width * 0.22);
+  const xEnd = Math.floor(width * 0.78);
+  const rowCount = yEnd - yStart;
+  if (rowCount < 8 || xEnd - xStart < 8) return idle;
+
+  // Per row: mean brightness, and mean color saturation. Road paint is white-on-grey,
+  // so a colourful surface (grass, red brick, tiles) is not a crossing.
+  const rows = new Float32Array(rowCount);
+  let saturationSum = 0;
+  let saturationCount = 0;
+  for (let y = yStart; y < yEnd; y++) {
+    let sum = 0;
+    let count = 0;
+    for (let x = xStart; x < xEnd; x++) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      sum += 0.299 * r + 0.587 * g + 0.114 * b;
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      saturationSum += max === 0 ? 0 : (max - min) / max;
+      saturationCount++;
+      count++;
+    }
+    rows[y - yStart] = sum / count;
+  }
+  const meanSaturation = saturationCount ? saturationSum / saturationCount : 1;
+  if (meanSaturation > CROSSWALK_MAX_SATURATION) return idle;
+
+  let mean = 0;
+  for (let i = 0; i < rowCount; i++) mean += rows[i];
+  mean /= rowCount;
+
+  let minRow = Infinity;
+  let maxRow = -Infinity;
+  for (let i = 0; i < rowCount; i++) {
+    if (rows[i] < minRow) minRow = rows[i];
+    if (rows[i] > maxRow) maxRow = rows[i];
+  }
+  const contrast = maxRow - minRow;
+
+  // Collect bands: runs of rows that stay clearly above or below the mean. A band only
+  // counts once it is a few rows thick, which rejects fine texture and single shadows.
+  const margin = Math.max(8, contrast * 0.2);
+  const minBandRows = Math.max(2, Math.round(rowCount * 0.045));
+  const bands = [];
+  let currentSign = 0;
+  let runLength = 0;
+  let runSum = 0;
+
+  const closeBand = () => {
+    if (currentSign !== 0 && runLength >= minBandRows) {
+      bands.push({ sign: currentSign, rows: runLength, level: runSum / runLength });
+    }
+  };
+
+  for (let i = 0; i < rowCount; i++) {
+    const sign = rows[i] > mean + margin ? 1 : rows[i] < mean - margin ? -1 : 0;
+    if (sign !== 0 && sign === currentSign) {
+      runLength++;
+      runSum += rows[i];
+    } else {
+      closeBand();
+      currentSign = sign;
+      runLength = sign === 0 ? 0 : 1;
+      runSum = sign === 0 ? 0 : rows[i];
+    }
+  }
+  closeBand();
+
+  const brightBands = bands.filter((b) => b.sign === 1);
+  const darkBands = bands.filter((b) => b.sign === -1);
+
+  // Zebra paint is genuinely bright and the asphalt between it genuinely dark.
+  // Concrete stairs and paving slabs sit in the mid greys and fail this.
+  const brightLevel = brightBands.length
+    ? brightBands.reduce((s, b) => s + b.level, 0) / brightBands.length
+    : 0;
+  const darkLevel = darkBands.length
+    ? darkBands.reduce((s, b) => s + b.level, 0) / darkBands.length
+    : 255;
+
+  // Stripes are evenly spaced, so band thicknesses must be similar. Stairs seen in
+  // perspective, and random shadows, give wildly uneven bands.
+  let evenness = 0;
+  if (bands.length >= 2) {
+    const thicknesses = bands.map((b) => b.rows);
+    const meanThickness = thicknesses.reduce((s, t) => s + t, 0) / thicknesses.length;
+    const spread =
+      Math.sqrt(
+        thicknesses.reduce((s, t) => s + (t - meanThickness) ** 2, 0) / thicknesses.length
+      ) / meanThickness;
+    evenness = Math.max(0, 1 - spread);
+  }
+
+  const hasPattern =
+    bands.length >= CROSSWALK_MIN_BANDS &&
+    brightBands.length >= 2 &&
+    darkBands.length >= 2 &&
+    contrast >= CROSSWALK_MIN_CONTRAST &&
+    brightLevel >= CROSSWALK_MIN_BRIGHT_LEVEL &&
+    darkLevel <= CROSSWALK_MAX_DARK_LEVEL &&
+    evenness >= CROSSWALK_MIN_EVENNESS;
+
+  const candidateFrames = hasPattern ? (prevState?.candidateFrames || 0) + 1 : 0;
+  const detected = candidateFrames >= CROSSWALK_CONFIRM_FRAMES;
+
+  return {
+    detected,
+    confidence: Math.min(1, evenness * (contrast / 120)),
+    bandCount: bands.length,
+    contrast: Math.round(contrast),
+    evenness: Math.round(evenness * 100) / 100,
+    brightLevel: Math.round(brightLevel),
+    darkLevel: Math.round(darkLevel),
+    saturation: Math.round(meanSaturation * 100) / 100,
+    candidateFrames,
+    // Worded as a possibility on purpose. The pattern test is strict but still a
+    // heuristic, and sunlit concrete stairs remain a plausible look-alike, so the
+    // user is cued to verify with the cane rather than told a crossing is there.
+    messageRo: detected ? 'Posibilă trecere de pietoni în față.' : '',
+  };
 }
 
 /**
@@ -513,7 +773,8 @@ export function analyzeDetections(
   frameHeight,
   prevObstacles = [],
   frameSample = null,
-  now = Date.now()
+  now = Date.now(),
+  video = null
 ) {
   if (!frameWidth || !frameHeight) return [];
 
@@ -525,14 +786,12 @@ export function analyzeDetections(
     .filter((p) => {
       // 1. Initial confidence filter (traffic lights are small so allow >= 0.25)
       if (p.class === 'traffic light') {
-        if (p.score < PED_LIGHT_MIN_SCORE) return false;
+        if (p.score < LIGHT_MIN_SCORE) return false;
         const [bx, , bw, bh] = p.bbox;
         if (bw <= 0 || bh <= 0) return false;
-        const aspect = bh / bw;
-        if (aspect > PED_LIGHT_MAX_ASPECT || aspect < PED_LIGHT_MIN_ASPECT) return false; // car signal
-        if (bh / frameHeight < PED_LIGHT_MIN_HEIGHT_RATIO) return false; // too far
+        if (bh / frameHeight < LIGHT_MIN_HEIGHT_RATIO) return false; // too far to matter
         const cx = (bx + bw / 2) / frameWidth;
-        if (cx < PED_LIGHT_CENTER_MIN || cx > PED_LIGHT_CENTER_MAX) return false; // not ahead
+        if (cx < LIGHT_CENTER_MIN || cx > LIGHT_CENTER_MAX) return false; // another crossing
         return true;
       }
       if (p.score < 0.46) return false;
@@ -618,16 +877,33 @@ export function analyzeDetections(
 
       let trafficLightState = null;
       let trafficLightHold = 0;
+      let lightKind = null;
       if (p.class === 'traffic light') {
+        // Shape tells the two kinds apart, but only once the box is big enough to measure.
+        const aspect = height / width;
+        if (height < LIGHT_SHAPE_MIN_HEIGHT_PX) {
+          lightKind = 'unknown';
+        } else if (aspect <= PED_LIGHT_MAX_ASPECT) {
+          lightKind = 'pedestrian';
+        } else if (aspect >= CAR_LIGHT_MIN_ASPECT) {
+          lightKind = 'car';
+        } else {
+          lightKind = 'unknown';
+        }
+        if (prev?.lightKind && prev.lightKind !== 'unknown' && lightKind === 'unknown') {
+          lightKind = prev.lightKind; // keep an earlier, closer-range judgement
+        }
+
         const detectedColor = detectTrafficLightState(
           [x, y, width, height],
           frameWidth,
           frameHeight,
-          frameSample
+          frameSample,
+          video
         );
         if (detectedColor !== 'unknown') {
           trafficLightState = detectedColor;
-          trafficLightHold = 2;
+          trafficLightHold = 3;
         } else if (prev?.trafficLightState && (prev.trafficLightHold || 0) > 0) {
           trafficLightState = prev.trafficLightState;
           trafficLightHold = prev.trafficLightHold - 1;
@@ -648,16 +924,17 @@ export function analyzeDetections(
         y < frameHeight * 0.38 && y + height < frameHeight * 0.82;
 
       if (p.class === 'traffic light') {
-        if (trafficLightState === 'red') {
+        // A red pedestrian signal is the one case that must stop the user
+        if (lightKind === 'pedestrian' && trafficLightState === 'red') {
           isThreat = true;
-          threatReason = 'Semafor roșu';
+          threatReason = 'Semafor pietoni roșu';
           severity = 'danger';
-        } else if (trafficLightState === 'yellow') {
+        } else if (lightKind === 'pedestrian' && trafficLightState === 'yellow') {
           isThreat = true;
-          threatReason = 'Semafor galben';
+          threatReason = 'Semafor pietoni galben';
           severity = 'approaching';
-        } else if (trafficLightState === 'green') {
-          // Green light is safe to pass, not a hazard
+        } else {
+          // Green, car signals and unreadable lights are informational, not hazards
           isThreat = false;
           severity = 'far';
         }
@@ -702,12 +979,28 @@ export function analyzeDetections(
       // Alert message in Romanian (concise, clear, fast to speak)
       let messageRo = `${labelRo} ${zoneRo}, ${distanceMeters} metri.`;
       if (p.class === 'traffic light') {
-        if (trafficLightState === 'red') {
-          messageRo = 'Semafor pietoni roșu. Oprește!';
-        } else if (trafficLightState === 'yellow') {
-          messageRo = 'Semafor pietoni galben.';
-        } else if (trafficLightState === 'green') {
-          messageRo = 'Semafor pietoni verde. Poți traversa.';
+        // Only a pedestrian signal may carry a crossing instruction. Telling someone to
+        // cross on a car signal's green would send them into moving traffic.
+        if (lightKind === 'pedestrian') {
+          if (trafficLightState === 'red') {
+            messageRo = 'Semafor pietoni roșu. Nu traversa.';
+          } else if (trafficLightState === 'yellow') {
+            messageRo = 'Semafor pietoni galben. Așteaptă.';
+          } else if (trafficLightState === 'green') {
+            messageRo = 'Semafor pietoni verde. Poți traversa.';
+          } else {
+            messageRo = 'Semafor pietoni în față.';
+          }
+        } else if (lightKind === 'car') {
+          messageRo =
+            trafficLightState === 'unknown'
+              ? 'Semafor pentru mașini în față.'
+              : `Semafor mașini ${TRAFFIC_COLOR_RO[trafficLightState]}.`;
+        } else {
+          messageRo =
+            trafficLightState === 'unknown'
+              ? 'Semafor în față.'
+              : `Semafor ${TRAFFIC_COLOR_RO[trafficLightState]}.`;
         }
       } else if (severity === 'danger') {
         messageRo = `Atenție! ${labelRo} ${zoneRo}, ${distanceMeters} metri.`;
@@ -723,6 +1016,7 @@ export function analyzeDetections(
         labelRo,
         trafficLightState,
         trafficLightHold,
+        lightKind,
         score: p.score,
         bbox: [x, y, width, height],
         centerX,
@@ -752,9 +1046,7 @@ export function analyzeDetections(
         isConfirmed: framesSeen >= 2,
         messageRo,
       };
-    })
-    // A signal with no lit lamp is usually seen from behind/side: not useful, drop it
-    .filter((o) => !(o.class === 'traffic light' && o.trafficLightState === 'unknown'));
+    });
 
   // Keep recently confirmed obstacles for up to 2 missed frames for visual continuity,
   // but mark them as non-threatening so they never re-trigger voice alerts after passing
@@ -811,6 +1103,14 @@ export function emitTiltWarningEvent(tiltPayload) {
   window.dispatchEvent(
     new CustomEvent('accessmap:tilt-warning', {
       detail: tiltPayload,
+    })
+  );
+}
+
+export function emitCrosswalkEvent(crosswalkPayload) {
+  window.dispatchEvent(
+    new CustomEvent('accessmap:crosswalk', {
+      detail: crosswalkPayload,
     })
   );
 }

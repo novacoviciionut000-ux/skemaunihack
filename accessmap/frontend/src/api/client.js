@@ -363,6 +363,65 @@ const NEARBY_RADIUS_DEG = 0.15; // ~15 km search box around the user
 const UNREACHABLE_OSM_TYPES = new Set(['construction', 'disused', 'abandoned', 'proposed', 'demolished']);
 const NEARBY_WORDS = /\b(?:cel|cea)\s+mai\s+(?:apropiat[ae]?|aproape)\b|\b(?:nearest|closest|near me|nearby|apropiat[ae]?|de langa mine|langa mine)\b/g;
 
+// Spoken commands wrap the destination in intent words: "vreau sa ajung la kaufland",
+// "trebuie sa ajung la gara", "cum ajung la spitalul judetean". Those words used to reach
+// the geocoder as part of the query, so nothing matched, and they also diluted the name
+// score (1 of 3 tokens matching "kaufland" scored 0.33, below the 0.5 acceptance bar).
+//
+// Filtering word by word rather than by sentence pattern, so word order and phrasing do
+// not matter. These are matched against already-normalized text, so there are no
+// diacritics or hyphens left: "du-mă" has become "du ma" by this point.
+const VOICE_FILLER_WORDS = new Set([
+  // politeness and address
+  'te', 'va', 'rog', 'multumesc', 'mersi', 'hei', 'hey', 'ok', 'okay', 'asistent', 'accessmap',
+  // wanting / needing
+  'vreau', 'vreu', 'as', 'vrea', 'dori', 'doresc', 'trebuie', 'nevoie', 'am', 'aș',
+  'pot', 'poti', 'hai', 'haide', 'sa', 'sal', 'fiu', 'dus', 'duca',
+  // going
+  'ajung', 'ajunge', 'merg', 'mergi', 'mergem', 'mergeti', 'plec', 'duc', 'duci', 'du',
+  'condu', 'ghideaza', 'indreapta', 'deplasez', 'navigheaza', 'navigare', 'navigatie',
+  // asking
+  'cum', 'unde', 'incotro', 'e', 'este', 'fac',
+  // searching / showing
+  'caut', 'cauta', 'gaseste', 'arata', 'seteaza', 'pune', 'alege',
+  // route nouns
+  'ruta', 'rute', 'traseu', 'traseul', 'drum', 'drumul', 'destinatia', 'destinatie',
+  'porneste', 'calculeaza', 'incepe',
+  // pronouns and leftovers
+  'ma', 'mi', 'mie', 'acum', 'repede', 'acolo',
+  // English equivalents
+  'i', 'want', 'wanna', 'need', 'would', 'like', 'take', 'bring', 'get', 'guide', 'walk',
+  'lead', 'me', 'to', 'go', 'navigate', 'directions', 'route', 'please', 'show', 'find',
+  'where', 'is', 'how', 'do', 'can',
+]);
+
+// Dropped only when they come first. In the middle they are part of the name,
+// as in "Gara de Nord" or "Spitalul de Copii".
+const VOICE_LEADING_PREPOSITIONS = new Set([
+  'la', 'in', 'spre', 'catre', 'pe', 'pana', 'de', 'din', 'cu', 'the', 'a', 'an',
+]);
+
+/**
+ * Strips spoken command wrappers so only the destination is left.
+ * Returns the normalized original if stripping would leave nothing usable, so the
+ * caller can reject a command that carried no destination at all.
+ *
+ * Trade-off: a single letter spoken as a word is treated as filler, so a name like
+ * "Strada E. Murgu" reduces to "strada murgu". The geocoder still resolves that.
+ */
+export const stripVoiceIntent = (text) => {
+  const normalized = normalizeSearchText(text);
+  if (!normalized) return '';
+
+  let tokens = normalized.split(' ').filter((t) => t && !VOICE_FILLER_WORDS.has(t));
+  while (tokens.length && VOICE_LEADING_PREPOSITIONS.has(tokens[0])) {
+    tokens = tokens.slice(1);
+  }
+
+  const out = tokens.join(' ');
+  return out.length >= 2 ? out : normalized;
+};
+
 function levenshtein(a, b) {
     if (a === b) return 0;
     if (!a.length) return b.length;
@@ -413,7 +472,7 @@ export const findClosestPlace = async (query, userLocation = null) => {
         ? { lat: Number(userLocation.lat), lng: Number(userLocation.lng) }
         : TIMISOARA_CENTER;
 
-    const cleanQ = normalizeSearchText(query).replace(NEARBY_WORDS, ' ').replace(/\s+/g, ' ').trim();
+    const cleanQ = stripVoiceIntent(query).replace(NEARBY_WORDS, ' ').replace(/\s+/g, ' ').trim();
     if (cleanQ.length < 2) return null;
 
     const tokens = cleanQ.split(' ').filter((t) => t && !SEARCH_STOPWORDS.has(t));
