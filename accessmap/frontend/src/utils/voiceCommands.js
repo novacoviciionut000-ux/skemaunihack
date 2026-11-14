@@ -64,6 +64,21 @@ const NAV_GUIDANCE = [
   'pe unde sa merg', 'start navigare', 'porneste navigarea', 'incepe navigarea', 'incepe ghidarea',
   'navigare pas cu pas', 'pe unde tre sa o iau', 'pe unde trebe sa o iau',
 ];
+// Microphone. "oprește microfonul permanent" contains "microfonul permanent", so OFF is
+// matched before ON.
+const MIC_OFF = [
+  'opreste microfonul', 'opreste microfonul permanent', 'inchide microfonul', 'dezactiveaza microfonul',
+  'dezactiveaza microfonul permanent', 'opreste ascultarea', 'opreste ascultarea permanenta',
+  'nu mai asculta', 'stop microfon', 'microfon oprit', 'mic off', 'stop listening',
+];
+const MIC_ON = [
+  'activeaza microfonul permanent', 'activeaza permanent microfonul', 'activeaza microfon permanent',
+  'porneste microfonul permanent', 'porneste microfon permanent', 'microfon permanent', 'microfonul permanent',
+  'microfon mereu activ', 'microfonul mereu activ', 'lasa microfonul pornit', 'tine microfonul pornit',
+  'asculta permanent', 'asculta mereu', 'asculta tot timpul', 'activeaza ascultarea permanenta',
+  'mod permanent', 'always listen',
+];
+
 // Help system ("buton de ajutor" for clients, deeds for volunteers). "ajutor" alone stays 112.
 // Client
 const CALL_VOLUNTEER = [
@@ -285,7 +300,8 @@ function destinationFromIntent(words) {
  * @returns {{ type: string, transcript: string, destination?: {query, near, knownPlace}, newDestination?: object|null }}
  *   type: confirm-yes | confirm-no | destination | emergency | camera-open | camera-close |
  *         cancel-route | status | start-navigation | call-volunteer | cancel-help | help-status |
- *         deed-finished | accept-help | release-help | duty-on | duty-off | my-points | unknown
+ *         deed-finished | accept-help | release-help | duty-on | duty-off | my-points |
+ *         mic-always-on | mic-off | unknown
  * ctx.isClient: logged in as a client, so a bare "ajutor" calls a volunteer instead of 112
  */
 export function parseVoiceCommand(transcript, ctx = {}) {
@@ -305,6 +321,8 @@ export function parseVoiceCommand(transcript, ctx = {}) {
   }
 
   // Control phrases first: "anuleaza ruta" also contains the go-word "ruta"
+  if (hasPhrase(text, MIC_OFF)) return result('mic-off');
+  if (hasPhrase(text, MIC_ON)) return result('mic-always-on');
   if (hasPhrase(text, CANCEL_HELP)) return result('cancel-help');
   if (hasPhrase(text, HELP_STATUS)) return result('help-status');
   if (hasPhrase(text, DEED_FINISHED)) return result('deed-finished');

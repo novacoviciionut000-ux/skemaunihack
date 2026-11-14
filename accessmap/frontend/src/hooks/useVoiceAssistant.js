@@ -19,6 +19,8 @@ export function useVoiceAssistant({
   onConfirmYes,
   onConfirmNo,
   onConfirmUnclear,          // așteptăm „da”/„nu” dar s-a auzit altceva
+  onMicAlwaysOn,             // „activează microfonul permanent”
+  onMicOff,                  // „oprește microfonul”
   alwaysOn = false,          // dacă true, pornește microfonul automat și îl ține activ
   isClient = false,          // client logat: „ajutor” cheamă un voluntar în loc de 112
 }) {
@@ -94,6 +96,12 @@ export function useVoiceAssistant({
       case 'release-help':
       case 'duty-on':
       case 'duty-off':
+      case 'mic-always-on':
+        if (onMicAlwaysOn) onMicAlwaysOn();
+        return;
+      case 'mic-off':
+        if (onMicOff) onMicOff();
+        return;
       case 'my-points':
         emitHelpCommand(cmd.type);
         return;
@@ -148,6 +156,8 @@ export function useVoiceAssistant({
     onConfirmYes,
     onConfirmNo,
     onConfirmUnclear,
+    onMicAlwaysOn,
+    onMicOff,
   ]);
 
   // ─── Pornire recognition ──────────────────────────────────────────────────

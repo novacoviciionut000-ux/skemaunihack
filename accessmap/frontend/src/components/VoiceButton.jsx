@@ -222,6 +222,8 @@ export default function VoiceButton({
     onConfirmYes: handleConfirmYes,
     onConfirmNo: handleConfirmNo,
     onConfirmUnclear: handleConfirmUnclear,
+    onMicAlwaysOn: () => turnMicAlwaysOn(),
+    onMicOff: () => turnMicOff(),
     alwaysOn: false, // controlăm manual din UI
     isClient: Boolean(user && user.accountType !== 'VOLUNTEER'),
   });
@@ -235,21 +237,40 @@ export default function VoiceButton({
   }, [error]);
 
   // ── Toggle always-on ──────────────────────────────────────────────────
-  const handleToggleAlwaysOn = () => {
-    if (alwaysOn) {
-      stopAlwaysOn();
-      setAlwaysOn(false);
-      setStatusMessage('Microfon oprit');
-      setStatusType('info');
-    } else {
-      setAlwaysOn(true);
-      setStatusMessage('Ascultare permanentă activă...');
-      setStatusType('success');
-      speak('Asistent vocal activat. Poți spune comenzi oricând.', {
-        interrupt: true,
-        onEnd: () => startAlwaysOn(),
-      });
+  // The recognizer keeps the callbacks it was started with, so these read the current
+  // state from voiceStateRef instead of the render they were created in.
+  const turnMicAlwaysOn = () => {
+    const { alwaysOn: on, startAlwaysOn: startOn } = voiceStateRef.current;
+    if (on) {
+      speak('Microfonul permanent este deja pornit. Spune Oprește microfonul ca să-l oprești.', { interrupt: true });
+      return;
     }
+    setAlwaysOn(true);
+    setStatusMessage('Microfon permanent activ. Spune „Oprește microfonul” ca să-l oprești.');
+    setStatusType('success');
+    speak('Microfon permanent activat. Poți spune comenzi oricând. Spune Oprește microfonul ca să-l oprești.', {
+      interrupt: true,
+      onEnd: () => startOn(),
+    });
+  };
+
+  const turnMicOff = () => {
+    const { alwaysOn: on, stopAlwaysOn: stopOn } = voiceStateRef.current;
+    if (!on) {
+      stopListening();
+      speak('Microfonul este oprit. Atinge ecranul de două ori când vrei să-mi spui ceva.', { interrupt: true });
+      return;
+    }
+    stopOn();
+    setAlwaysOn(false);
+    setStatusMessage('Microfon oprit');
+    setStatusType('info');
+    speak('Am oprit microfonul. Atinge ecranul de două ori când vrei să-mi spui ceva.', { interrupt: true });
+  };
+
+  const handleToggleAlwaysOn = () => {
+    if (alwaysOn) turnMicOff();
+    else turnMicAlwaysOn();
   };
 
   // ── Apăsare o singură dată ─────────────────────────────────────────────
@@ -269,7 +290,7 @@ export default function VoiceButton({
 
   // ── Atingere dublă oriunde pe ecran → pornește recunoașterea vocală ─────
   const voiceStateRef = useRef({});
-  voiceStateRef.current = { isListening, alwaysOn, startListening };
+  voiceStateRef.current = { isListening, alwaysOn, startListening, startAlwaysOn, stopAlwaysOn };
 
   // ── Întrebare pusă de aplicație (ex: „A fost rezolvat?”) → deschide microfonul ──
   useEffect(() => {
@@ -467,7 +488,9 @@ export default function VoiceButton({
       {/* ── Rând secundar: indiciu + microfon permanent ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <p style={{ margin: 0, flex: 1, fontSize: 12.5, color: palette.slate600, lineHeight: 1.4 }}>
-          {isListening
+          {alwaysOn
+            ? <>Ascult permanent. Spune <strong style={{ color: palette.ink }}>„Oprește microfonul”</strong> ca să-l oprești.</>
+            : isListening
             ? 'Vorbește acum.'
             : <>Atinge ecranul de două ori, apoi spune de exemplu <strong style={{ color: palette.ink }}>„Du-mă la Kaufland”</strong> sau <strong style={{ color: palette.ink }}>„Am nevoie de ajutor”</strong>.</>}
         </p>
