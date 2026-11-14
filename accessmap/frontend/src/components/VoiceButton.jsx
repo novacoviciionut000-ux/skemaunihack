@@ -34,13 +34,18 @@ export default function VoiceButton({
 
   // ── Destinație vocală: cea mai apropiată potrivire, ruta pornește imediat ──
   const lookupIdRef = useRef(0);
-  const handleDestinationRecognized = async (spokenAddress) => {
+  const handleDestinationRecognized = async (destination) => {
+    // { query, near } from the voice parser; a plain string still works
+    const dest = typeof destination === 'string' ? { query: destination, near: null } : destination;
+    const spokenAddress = dest.near ? `${dest.query} de lângă ${dest.near}` : dest.query;
     const lookupId = ++lookupIdRef.current;
     setStatusMessage(`Caut cel mai apropiat: "${spokenAddress}"...`);
     setStatusType('info');
+    // Immediate spoken feedback: the search can take a few seconds on mobile data
+    speak(`Caut ${spokenAddress}.`, { interrupt: true });
 
     try {
-      const place = await findClosestPlace(spokenAddress, userLocation);
+      const place = await findClosestPlace(dest.query, userLocation, dest.near);
       if (lookupId !== lookupIdRef.current) return; // a newer command superseded this one
 
       if (!place) {

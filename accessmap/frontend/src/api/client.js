@@ -179,6 +179,7 @@ const SEARCH_STOPWORDS = new Set([
 const GENERIC_PLACE_WORDS = new Set([
     'strada', 'str', 'bulevardul', 'bd', 'blvd', 'calea', 'piata', 'aleea',
     'splaiul', 'intrarea', 'parcul', 'parc', 'spitalul', 'spital', 'universitatea',
+    'soseaua', 'sos', 'sosea', 'bulevard',
 ]);
 
 function wordMatchesToken(targetWords, token) {
@@ -361,6 +362,9 @@ export const geocodeAddress = async (query, userLocation = null) => {
 const TIMISOARA_CENTER = { lat: 45.7538, lng: 21.2257 };
 const NEARBY_RADIUS_DEG = 0.15; // ~15 km search box around the user
 const UNREACHABLE_OSM_TYPES = new Set(['construction', 'disused', 'abandoned', 'proposed', 'demolished']);
+// Bus stops, bike docks etc. are often named after a nearby store ("Kaufland" bus stop).
+// They rank just below the store itself so "du-ma la Kaufland" leads to the shop.
+const NAMED_AFTER_PLACE_TYPES = new Set(['bus_stop', 'platform', 'stop_position', 'tram_stop', 'bicycle_rental', 'parking', 'parking_entrance', 'taxi']);
 const NEARBY_WORDS = /\b(?:cel|cea)\s+mai\s+(?:apropiat[ae]?|aproape)\b|\b(?:nearest|closest|near me|nearby|apropiat[ae]?|de langa mine|langa mine)\b/g;
 
 // Spoken commands wrap the destination in intent words: "vreau sa ajung la kaufland",
@@ -443,7 +447,8 @@ function fuzzyTokenMatch(token, words) {
     return words.some((w) => {
         if (w === token) return true;
         if (token.length >= 4 && w.length >= 4 && (w.startsWith(token) || token.startsWith(w))) return true;
-        return maxEdits > 0 && Math.abs(w.length - token.length) <= maxEdits && levenshtein(w, token) <= maxEdits;
+        // Same first letter required: otherwise "sagului" matched "raului" (Faleza Raului Bega)
+        return maxEdits > 0 && w[0] === token[0] && Math.abs(w.length - token.length) <= maxEdits && levenshtein(w, token) <= maxEdits;
     });
 }
 
@@ -467,7 +472,7 @@ function shortPlaceName(name, address) {
  *
  * @returns {Promise<{displayName, shortName, lat, lng, distanceMeters} | null>}
  */
-export const findClosestPlace = async (query, userLocation = null) => {
+export const findClosestPlace = async (query, userLocation = null, near = null) => {
     const ref = userLocation && userLocation.lat != null
         ? { lat: Number(userLocation.lat), lng: Number(userLocation.lng) }
         : TIMISOARA_CENTER;
@@ -519,7 +524,8 @@ export const findClosestPlace = async (query, userLocation = null) => {
                 if (UNREACHABLE_OSM_TYPES.has(item.type)) return;
                 const name = item.name || item.namedetails?.name || item.display_name.split(',')[0];
                 const brand = item.namedetails?.brand || '';
-                const score = Math.max(nameMatchScore(queryTokens, `${name} ${brand}`), 0.5 * nameMatchScore(queryTokens, item.display_name));
+                let score = Math.max(nameMatchScore(queryTokens, `${name} ${brand}`), 0.5 * nameMatchScore(queryTokens, item.display_name));
+                if (NAMED_AFTER_PLACE_TYPES.has(item.type)) score *= 0.9;
                 add({
                     displayName: item.display_name,
                     shortName: shortPlaceName(name, item.address),
@@ -561,11 +567,15 @@ export const findClosestPlace = async (query, userLocation = null) => {
     const good = candidates.filter((c) => c.score >= 0.5);
     if (!good.length) return null;
 
-    // Best name-match tier first, then the nearest one inside that tier
+    // Best name-match tier first. Inside it, a spoken hint ("Kaufland de pe Gheorghe Lazar")
+    // picks the store on that street; otherwise the nearest one wins.
     const bestScore = Math.max(...good.map((c) => c.score));
-    const best = good
-        .filter((c) => c.score >= bestScore - 0.01)
-        .sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
+    const tier = good.filter((c) => c.score >= bestScore - 0.01);
+    const nearTokens = near
+        ? normalizeSearchText(near).split(' ').filter((t) => t && !SEARCH_STOPWORDS.has(t) && !GENERIC_PLACE_WORDS.has(t))
+        : [];
+    const nearScore = (c) => (nearTokens.length ? nameMatchScore(nearTokens, c.displayName) : 0);
+    const best = tier.sort((a, b) => (nearScore(b) - nearScore(a)) || (a.distanceMeters - b.distanceMeters))[0];
 
     return {
         displayName: best.displayName,

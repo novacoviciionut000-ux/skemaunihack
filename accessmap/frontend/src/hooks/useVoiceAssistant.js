@@ -1,108 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { speechQueue } from '../utils/speechQueue';
+import { pickBestCommand } from '../utils/voiceCommands';
 
-// ─── Normalizare text românesc (fără diacritice, lowercase) ───────────────────
-export function normalizeVoiceText(str) {
-  return (str || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[.,!?;:]+$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-// ─── Comenzile vocale recunoscute (forma normalizată, fără diacritice) ───────
-const CAMERA_TRIGGERS = [
-  'deschide camera', 'porneste camera', 'activeaza camera',
-  'deschide cam', 'camera on', 'vreau camera',
-  'deschide-mi camera', 'arata camera', 'arata-mi camera',
-];
-
-const CAMERA_CLOSE_TRIGGERS = [
-  'inchide camera', 'opreste camera', 'camera off', 'dezactiveaza camera',
-];
-
-const EMERGENCY_TRIGGERS = [
-  'ajutor', 'urgenta', '112', 'sos',
-];
-
-const NAV_GUIDANCE_TRIGGERS = [
-  'pe unde trebuie sa o iau', 'pe unde o iau', 'pe unde merg',
-  'incotro o iau', 'urmatorul pas', 'pe unde sa merg', 'ghideaza-ma',
-  'start navigare', 'porneste navigarea', 'incepe navigarea', 'incepe ghidarea',
-  'navigare pas cu pas', 'pe unde tre sa o iau', 'pe unde trebe sa o iau',
-];
-
-const YES_TRIGGERS = [
-  'da', 'da te rog', 'confirm', 'confirma', 'corect', 'exact',
-  'ok', 'bine', 'mergem', 'porneste', 'hai', 'asa e', 'perfect',
-];
-
-const NO_TRIGGERS = [
-  'nu', 'nu e bine', 'anuleaza', 'opreste', 'gresit', 'altceva', 'alta adresa',
-];
-
-const CANCEL_ROUTE_TRIGGERS = [
-  'anuleaza ruta', 'opreste navigarea', 'sterge ruta', 'anuleaza traseul', 'opreste traseul',
-];
-
-const STATUS_TRIGGERS = [
-  'cat mai am', 'cat dureaza', 'status ruta', 'unde merg', 'ce destinatie am', 'cat e pana acolo',
-];
-
-const NAV_DESTINATION_PREFIXES = [
-  /^(?:hei|ok|te rog|va rog|asistent|accessmap)\s+/i,
-  /^(?:vreau|as vrea|as dori|doresc)\s+(?:sa\s+)?(?:ajung|merg|plec|ma duc|ma deplasez)\s+(?:la|in|spre|catre|pe|pana la|pana in)\s+/i,
-  /^(?:vreau|as vrea|as dori|doresc)\s+(?:la|in|spre|catre|pe)\s+/i,
-  /^(?:cum|pe unde)\s+(?:pot\s+sa\s+)?ajung\s+(?:la|in|spre|catre|pe|pana la|pana in)\s+/i,
-  /^(?:du-ma|du ma|ma duci|poti sa ma duci|ma poti duce)\s+(?:la|in|spre|catre|pe|pana la|pana in)\s+/i,
-  /^(?:navigheaza|navigare|ghideaza-ma|ghideaza ma|traseu|ruta|drum|drumul)\s+(?:la|in|spre|catre|pe|pana la|pana in)\s+/i,
-  /^(?:mergi|du-te|du te|pleaca|porneste|o iau|mergem)\s+(?:la|in|spre|catre|pe|pana la|pana in)\s+/i,
-  /^(?:seteaza|pune|alege|cauta|cauta-mi|gaseste|gaseste-mi|arata-mi|arata)\s+(?:destinatia\s+)?(?:drumul\s+)?(?:la|in|spre|catre|pe)?\s*/i,
-  /^(?:destinatia|destinatie)\s+(?:este\s+|e\s+|la\s+|in\s+|spre\s+|catre\s+)?/i,
-  /^(?:la|in|spre|catre)\s+/i,
-  // English ("Take me to Kaufland", "Navigate to the train station", "I want to go to ...")
-  /^(?:hey|ok|okay|please)\s+/i,
-  /^(?:take|bring|get|guide|walk|lead)\s+me\s+(?:to|towards)\s+/i,
-  /^(?:go|navigate|directions|route|walk|head|drive)\s+(?:me\s+)?(?:to|towards)\s+/i,
-  /^(?:i\s+)?(?:want|wanna|need|would like|'d like|d like)\s+(?:to\s+)?go\s+(?:to\s+)?/i,
-  /^(?:let'?s|lets)\s+go\s+(?:to\s+)?/i,
-  /^(?:how do i get|how can i get|how to get)\s+to\s+/i,
-  /^(?:find|find me|search for|show me|where is)\s+/i,
-  /^(?:the|a|an)\s+/i,
-  // "cel mai apropiat Kaufland" / "the nearest Kaufland": the search already picks the closest one
-  /^(?:cel|cea)\s+mai\s+(?:apropiat[ae]?|aproape)\s+/i,
-  /^(?:nearest|closest)\s+/i,
-];
-
-function containsAny(normalizedText, triggers) {
-  return triggers.some((t) => normalizedText.includes(t));
-}
-
-export function extractAddress(raw) {
-  let text = normalizeVoiceText(raw);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const pattern of NAV_DESTINATION_PREFIXES) {
-      const next = text.replace(pattern, '').trim();
-      if (next !== text) {
-        text = next;
-        changed = true;
-      }
-    }
-  }
-  text = text
-    .replace(/\s+(?:te rog|va rog|multumesc|mersi|acum|repede|please|now|thanks|thank you)$/i, '')
-    .replace(/\s+(?:cel|cea)\s+mai\s+(?:apropiat[ae]?|aproape)$/i, '')
-    .replace(/\s+(?:near me|nearby|close by)$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!text) return '';
-  // Capitalizează fiecare cuvânt
-  return text.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-}
+// Command parsing lives in utils/voiceCommands.js (pure, unit-tested).
+export { normalizeVoiceText } from '../utils/voiceCommands';
 
 // ─── Hook principal ───────────────────────────────────────────────────────────
 export function useVoiceAssistant({
@@ -153,87 +54,53 @@ export function useVoiceAssistant({
   }, []);
 
   // ─── Procesare rezultat recunoscut ───────────────────────────────────────
-  const processResult = useCallback((spoken) => {
-    const normalized = normalizeVoiceText(spoken);
+  // `alternatives`: everything the recognizer offered, best guess first. The parser picks
+  // the one that makes sense ("du-mă la Kaufland" over a misheard "du-mă la cauza").
+  const processResult = useCallback((alternatives) => {
+    const list = Array.isArray(alternatives) ? alternatives : [alternatives];
+    const cmd = pickBestCommand(list, { awaitingConfirmation: awaitingConfirmRef.current });
 
-    // 0. Dacă așteptăm confirmare Da / Nu pentru o destinație propusă
-    if (awaitingConfirmRef.current) {
-      const isExactYes = YES_TRIGGERS.some(
-        (t) => normalized === t || normalized.startsWith(`${t} `)
-      );
-      const isExactNo = NO_TRIGGERS.some(
-        (t) => normalized === t || normalized.startsWith(`${t} `)
-      );
-
-      if (isExactYes) {
+    switch (cmd.type) {
+      case 'confirm-yes':
         if (onConfirmYes) onConfirmYes();
         return;
-      }
-      if (isExactNo) {
-        // Dacă utilizatorul a zis "nu, la <altă adresă>", căutăm direct noua adresă
-        const remainder = normalized.replace(/^(?:nu|gresit|altceva)[,\s]*/i, '').trim();
-        const maybeNewAddress = extractAddress(remainder);
-        if (remainder.length >= 3 && maybeNewAddress.length >= 3) {
-          if (onConfirmNo) onConfirmNo(maybeNewAddress);
-          return;
-        }
-        if (onConfirmNo) onConfirmNo(null);
+      case 'confirm-no':
+        if (onConfirmNo) onConfirmNo(cmd.newDestination || null);
         return;
-      }
+      case 'emergency':
+        speak('Alertă de urgență activată! Se pregătesc coordonatele pentru 112.', { interrupt: true });
+        if (onEmergency) onEmergency();
+        return;
+      case 'camera-open':
+        speak('Deschid camera.', { interrupt: true });
+        if (onCameraOpen) onCameraOpen();
+        return;
+      case 'camera-close':
+        speak('Închid camera.', { interrupt: true });
+        if (onCameraClose) onCameraClose();
+        return;
+      case 'cancel-route':
+        speak('Am anulat ruta.', { interrupt: true });
+        if (onCancelRoute) onCancelRoute();
+        return;
+      case 'status':
+        if (onStatusQuery) onStatusQuery();
+        return;
+      case 'start-navigation':
+        speak('Pornesc ghidarea pas-cu-pas în timp real.', { interrupt: true });
+        if (onStartNavigation) onStartNavigation();
+        return;
+      case 'destination':
+        if (onDestinationRecognized) onDestinationRecognized(cmd.destination);
+        return;
+      default:
+        speak(
+          list[0]
+            ? `Am auzit: ${list[0]}. Nu am înțeles comanda. Spune, de exemplu: Du-mă la Kaufland.`
+            : 'Nu am auzit nimic. Atinge de două ori și spune, de exemplu: Du-mă la Kaufland.',
+          { interrupt: true }
+        );
     }
-
-    // 1. Urgență
-    if (containsAny(normalized, EMERGENCY_TRIGGERS)) {
-      speak('Alertă de urgență activată! Se pregătesc coordonatele pentru 112.', { interrupt: true });
-      if (onEmergency) onEmergency();
-      return;
-    }
-
-    // 2. Deschide camera
-    if (containsAny(normalized, CAMERA_TRIGGERS)) {
-      speak('Deschid camera.', { interrupt: true });
-      if (onCameraOpen) onCameraOpen();
-      return;
-    }
-
-    // 3. Închide camera
-    if (containsAny(normalized, CAMERA_CLOSE_TRIGGERS)) {
-      speak('Închid camera.', { interrupt: true });
-      if (onCameraClose) onCameraClose();
-      return;
-    }
-
-    // 4. Anulează ruta / oprește navigarea
-    if (containsAny(normalized, CANCEL_ROUTE_TRIGGERS)) {
-      speak('Am anulat ruta.', { interrupt: true });
-      if (onCancelRoute) onCancelRoute();
-      return;
-    }
-
-    // 5. Întrebare status / cât mai am
-    if (containsAny(normalized, STATUS_TRIGGERS)) {
-      if (onStatusQuery) onStatusQuery();
-      return;
-    }
-
-    // 6. Solicitare ghidare / start navigare în timp real
-    if (containsAny(normalized, NAV_GUIDANCE_TRIGGERS)) {
-      speak('Pornesc ghidarea pas-cu-pas în timp real.', { interrupt: true });
-      if (onStartNavigation) onStartNavigation();
-      return;
-    }
-
-    // 7. Destinație navigare
-    const hasNavPrefix = NAV_DESTINATION_PREFIXES.some((p) => p.test(normalized));
-    const address = extractAddress(spoken);
-
-    if ((hasNavPrefix && address.length >= 2) || address.length >= 3) {
-      if (onDestinationRecognized) onDestinationRecognized(address);
-      return;
-    }
-
-    // 8. Nu am recunoscut comanda
-    speak('Nu am înțeles comanda. Spune, de exemplu: Du-mă la Piața Victoriei, Cât mai am, sau Deschide camera.');
   }, [
     speak,
     onEmergency,
@@ -265,25 +132,50 @@ export function useVoiceAssistant({
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'ro-RO';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 3;
+    // Interim results on: iOS Safari sends them regardless, and on end we can still use the
+    // last partial phrase if the engine never marks one final (it often doesn't on iOS).
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 5;
     // continuous = false: mai stabil pe Chrome; restartăm manual în onend
     recognition.continuous = false;
 
+    // One utterance per session (continuous = false): handle it exactly once, either when the
+    // engine marks it final or, failing that, with the last partial text when listening ends.
+    let handled = false;
+    let lastPartial = [];
+    const handle = (alternatives) => {
+      if (handled) return;
+      const clean = alternatives.map((a) => (a || '').trim()).filter(Boolean);
+      if (!clean.length) return;
+      handled = true;
+      setTranscript(clean[0]);
+      processResult(clean);
+    };
+
     recognition.onstart = () => {
+      // Always-on mode restarts this same instance, so each session starts fresh
+      handled = false;
+      lastPartial = [];
       setIsListening(true);
       setPermissionGranted(true);
     };
 
     recognition.onresult = (event) => {
-      // Alege alternativa cu cel mai mare scor de încredere (implicit prima)
-      const results = Array.from(event.results[0]);
-      const best = results.reduce((a, b) =>
-        (b.confidence || 0) > (a.confidence || 0) ? b : a
-      , results[0]);
-      const spoken = best.transcript.trim();
-      setTranscript(spoken);
-      processResult(spoken);
+      // Join all result segments (some engines split one sentence into several results)
+      const segments = Array.from(event.results);
+      const best = segments.map((r) => r[0]?.transcript || '').join(' ').replace(/\s+/g, ' ').trim();
+      // Alternatives of the last segment, prefixed with the earlier segments' best text
+      const head = segments.slice(0, -1).map((r) => r[0]?.transcript || '').join(' ');
+      const last = segments[segments.length - 1];
+      const alts = last ? Array.from(last).map((a) => `${head} ${a.transcript}`.replace(/\s+/g, ' ').trim()) : [];
+      const alternatives = [best, ...alts.filter((a) => a !== best)];
+
+      if (segments.length && segments.every((r) => r.isFinal)) {
+        handle(alternatives);
+      } else {
+        lastPartial = alternatives;
+        setTranscript(best);
+      }
     };
 
     recognition.onerror = (event) => {
@@ -307,6 +199,7 @@ export function useVoiceAssistant({
 
     recognition.onend = () => {
       setIsListening(false);
+      handle(lastPartial);
       // Restart automat dacă suntem în modul always-on și nu vorbim noi
       if (shouldRestartRef.current) {
         const delay = isSpeakingRef.current ? 1200 : 300;
