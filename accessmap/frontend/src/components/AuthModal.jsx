@@ -25,7 +25,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [preferredProfile, setPreferredProfile] = useState('wheelchair');
+  const [preferredProfile, setPreferredProfile] = useState('low_vision');
 
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -612,37 +612,20 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 </div>
               )}
 
-              {/* Preferință mod de deplasare */}
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#334155', marginBottom: 6 }}>
-                  Profil implicit de mobilitate
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-                  {[
-                    { id: 'wheelchair', label: '♿ Scaun rulant' },
-                    { id: 'limited_mobility', label: '🚶‍♂️ Redusă' },
-                    { id: 'pedestrian', label: '🚶 Pieton' }
-                  ].map(p => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setPreferredProfile(p.id)}
-                      style={{
-                        padding: '6px 8px',
-                        borderRadius: 8,
-                        border: `1.5px solid ${preferredProfile === p.id ? '#2563eb' : '#e2e8f0'}`,
-                        backgroundColor: preferredProfile === p.id ? '#eff6ff' : '#ffffff',
-                        color: preferredProfile === p.id ? '#1d4ed8' : '#475569',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                      }}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
+              {/* Informare profil dedicat nevăzători */}
+              <div style={{
+                padding: '10px 12px',
+                borderRadius: 10,
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                fontSize: 12,
+                color: '#475569',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}>
+                <Eye size={16} color="#2563eb" />
+                <span>Contul tău include automat ghidarea dedicată pentru nevăzători.</span>
               </div>
             </>
           )}

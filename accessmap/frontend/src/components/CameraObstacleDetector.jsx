@@ -13,7 +13,21 @@ import {
   Smartphone,
   Route,
   CheckCircle2,
+  Target,
+  Layers,
+  ArrowRight,
+  ArrowLeft,
+  Eye,
+  Map as MapIcon,
+  Square,
+  Volume2,
+  VolumeX,
+  Play,
+  Pause,
+  Footprints,
+  ShieldAlert,
 } from 'lucide-react';
+import { getManeuverIcon } from './NavigationGuidance';
 import {
   loadObstacleModel,
   captureFrameSample,
@@ -78,6 +92,16 @@ export default function CameraObstacleDetector({
   userLocation,
   nearbyDetour,
   onDetourSaved,
+  // Navigation & Full-Screen props
+  isFullScreen = false,
+  onToggleFullScreen,
+  isNavigating = false,
+  guidance = null,
+  voiceEnabled = true,
+  onToggleVoice,
+  isSimulating = false,
+  onToggleSimulation,
+  onStopNavigation,
 }) {
   const isMobile = useIsMobile();
   const videoRef = useRef(null);
@@ -91,6 +115,7 @@ export default function CameraObstacleDetector({
   const clearFramesRef = useRef(0);
   const lastAlertRef = useRef({ key: '', severity: '', time: 0 });
   const lastTiltVibrateRef = useRef(0);
+  const lastTiltSpokenRef = useRef({ reason: null, time: 0 });
   const tiltSmoothedRef = useRef({ beta: null, gamma: null, activeReason: null });
   const audioCtxRef = useRef(null);
   const lastSidewalkEventRef = useRef({ status: '', time: 0 });
@@ -99,6 +124,9 @@ export default function CameraObstacleDetector({
   // Detour recording refs
   const recordingRef = useRef(null); // { obstacleCoords, obstacleClass, labelRo, path: [[lat, lng], ...] }
 
+  const [onlyThreats, setOnlyThreats] = useState(true);
+  const onlyThreatsRef = useRef(true);
+  onlyThreatsRef.current = onlyThreats;
   const [facingMode, setFacingMode] = useState('environment');
   const [cameraActive, setCameraActive] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
@@ -129,6 +157,7 @@ export default function CameraObstacleDetector({
     prevSidewalkRef.current = null;
     clearFramesRef.current = 0;
     tiltSmoothedRef.current = { beta: null, gamma: null, activeReason: null };
+    lastTiltSpokenRef.current = { reason: null, time: 0 };
     setCameraActive(false);
     setDetectedObstacles([]);
     setActiveAlert(null);
@@ -178,6 +207,8 @@ export default function CameraObstacleDetector({
       const isTilted = Boolean(reason);
       setTiltWarning(isTilted);
 
+      const now = Date.now();
+
       if (isTilted) {
         const msg =
           reason === 'up'
@@ -187,7 +218,6 @@ export default function CameraObstacleDetector({
               : 'Telefonul e înclinat într-o parte! Ține-l drept spre trotuar.';
         setTiltMessage(msg);
 
-        const now = Date.now();
         if (now - lastTiltVibrateRef.current >= TILT_VIBRATE_COOLDOWN_MS) {
           lastTiltVibrateRef.current = now;
           if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
@@ -203,14 +233,45 @@ export default function CameraObstacleDetector({
             timestamp: now,
           });
         }
+
+        // Avertizare vocală audio (TTS) în limba română pentru poziția telefonului
+        const isNewTiltReason = lastTiltSpokenRef.current.reason !== reason;
+        const isTiltVoiceCooldownElapsed = now - lastTiltSpokenRef.current.time >= 4000;
+        if ((isNewTiltReason || isTiltVoiceCooldownElapsed) && voiceEnabled !== false) {
+          lastTiltSpokenRef.current = { reason, time: now };
+          if ('speechSynthesis' in window) {
+            try {
+              window.speechSynthesis.cancel();
+              const utt = new SpeechSynthesisUtterance(msg);
+              utt.lang = 'ro-RO';
+              utt.rate = 1.05;
+              window.speechSynthesis.speak(utt);
+            } catch (err) {
+              console.warn('Tilt warning speech synthesis error:', err);
+            }
+          }
+        }
       } else {
         setTiltMessage('');
+        // Dacă telefonul a fost înclinat și utilizatorul l-a readus în poziție corectă, oferim confirmare audio
+        if (lastTiltSpokenRef.current.reason) {
+          lastTiltSpokenRef.current = { reason: null, time: now };
+          if ('speechSynthesis' in window && voiceEnabled !== false) {
+            try {
+              window.speechSynthesis.cancel();
+              const utt = new SpeechSynthesisUtterance('Poziție corectă a telefonului.');
+              utt.lang = 'ro-RO';
+              utt.rate = 1.1;
+              window.speechSynthesis.speak(utt);
+            } catch {}
+          }
+        }
       }
     };
 
     window.addEventListener('deviceorientation', handleOrientation);
     return () => window.removeEventListener('deviceorientation', handleOrientation);
-  }, [isOpen, cameraActive]);
+  }, [isOpen, cameraActive, voiceEnabled]);
 
   // Track userLocation while recording a detour around an obstacle
   useEffect(() => {
@@ -285,28 +346,91 @@ export default function CameraObstacleDetector({
 
     // Draw detected sidewalk walkable corridor trapezoid in lower frame
     if (sidewalk && sidewalk.status !== 'unknown') {
-      let pathFill = 'rgba(34, 197, 94, 0.14)';
-      let pathStroke = 'rgba(34, 197, 94, 0.65)';
-      if (sidewalk.status === 'edge_left' || sidewalk.status === 'edge_right') {
-        pathFill = 'rgba(245, 158, 11, 0.18)';
-        pathStroke = 'rgba(245, 158, 11, 0.75)';
-      } else if (sidewalk.status === 'blocked') {
-        pathFill = 'rgba(239, 68, 68, 0.18)';
-        pathStroke = 'rgba(239, 68, 68, 0.75)';
+      let pathFill = 'rgba(34, 197, 94, 0.16)';
+      let pathStroke = 'rgba(34, 197, 94, 0.75)';
+      if (sidewalk.action === 'steer_right' || sidewalk.action === 'steer_left') {
+        pathFill = 'rgba(245, 158, 11, 0.20)';
+        pathStroke = 'rgba(245, 158, 11, 0.85)';
+      } else if (sidewalk.action === 'stop') {
+        pathFill = 'rgba(239, 68, 68, 0.24)';
+        pathStroke = 'rgba(239, 68, 68, 0.90)';
       }
 
       ctx.save();
       ctx.fillStyle = pathFill;
       ctx.strokeStyle = pathStroke;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.moveTo(width * 0.22, height);
-      ctx.lineTo(width * 0.36, height * 0.62);
-      ctx.lineTo(width * 0.64, height * 0.62);
+      ctx.lineTo(width * 0.36, height * 0.60);
+      ctx.lineTo(width * 0.64, height * 0.60);
       ctx.lineTo(width * 0.78, height);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+
+      // Highlight left curb/drop-off if drifting left
+      if (sidewalk.action === 'steer_right' || sidewalk.leftEdge) {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.28)';
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(0, height);
+        ctx.lineTo(width * 0.22, height);
+        ctx.lineTo(width * 0.36, height * 0.60);
+        ctx.lineTo(0, height * 0.60);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Draw dynamic steering guidance arrow to the right
+        ctx.strokeStyle = '#22c55e';
+        ctx.fillStyle = '#22c55e';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(width * 0.32, height * 0.78);
+        ctx.lineTo(width * 0.58, height * 0.78);
+        ctx.stroke();
+        // Arrow head
+        ctx.beginPath();
+        ctx.moveTo(width * 0.58, height * 0.78);
+        ctx.lineTo(width * 0.52, height * 0.73);
+        ctx.lineTo(width * 0.52, height * 0.83);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Highlight right curb/drop-off if drifting right
+      if (sidewalk.action === 'steer_left' || sidewalk.rightEdge) {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.28)';
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(width, height);
+        ctx.lineTo(width * 0.78, height);
+        ctx.lineTo(width * 0.64, height * 0.60);
+        ctx.lineTo(width, height * 0.60);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Draw dynamic steering guidance arrow to the left
+        ctx.strokeStyle = '#22c55e';
+        ctx.fillStyle = '#22c55e';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(width * 0.68, height * 0.78);
+        ctx.lineTo(width * 0.42, height * 0.78);
+        ctx.stroke();
+        // Arrow head
+        ctx.beginPath();
+        ctx.moveTo(width * 0.42, height * 0.78);
+        ctx.lineTo(width * 0.48, height * 0.73);
+        ctx.lineTo(width * 0.48, height * 0.83);
+        ctx.closePath();
+        ctx.fill();
+      }
+
       ctx.restore();
     }
 
@@ -356,6 +480,8 @@ export default function CameraObstacleDetector({
                 ? 'GALBEN'
                 : 'SEMAFOR';
         label = `Semafor: ${stateText}`;
+      } else if (obs.threatReason) {
+        label = `${obs.labelRo} (${obs.threatReason}) • ~${obs.distanceMeters}m`;
       }
 
       ctx.font = '600 13px Inter, system-ui, sans-serif';
@@ -398,8 +524,11 @@ export default function CameraObstacleDetector({
           );
           prevObstaclesRef.current = analyzed;
 
-          // Only surface confirmed obstacles (seen >= 2 frames) to UI and voice events
-          const confirmedObstacles = analyzed.filter((o) => o.isConfirmed);
+          // Surface ONLY obstacles that represent active dangers / approaching collision threats
+          // unless user toggles to show all raw detections
+          const confirmedObstacles = analyzed.filter(
+            (o) => o.isConfirmed && (onlyThreatsRef.current ? o.isThreat : true)
+          );
 
           const sidewalk = analyzeSidewalkPath(
             frameSample,
@@ -410,13 +539,32 @@ export default function CameraObstacleDetector({
           setSidewalkStatus(sidewalk);
 
           const now = Date.now();
+          const needsSidewalkWarning =
+            sidewalk.action &&
+            sidewalk.action !== 'straight' &&
+            sidewalk.action !== 'unknown';
+
           if (
-            (sidewalk.status === 'edge_left' || sidewalk.status === 'edge_right') &&
-            (sidewalk.status !== lastSidewalkEventRef.current.status ||
+            needsSidewalkWarning &&
+            (sidewalk.action !== lastSidewalkEventRef.current.action ||
               now - lastSidewalkEventRef.current.time >= SIDEWALK_EVENT_COOLDOWN_MS)
           ) {
-            lastSidewalkEventRef.current = { status: sidewalk.status, time: now };
+            lastSidewalkEventRef.current = { action: sidewalk.action, time: now };
             emitSidewalkStatusEvent({ ...sidewalk, timestamp: now });
+
+            // Audible warning and safe direction correction for visually impaired user
+            if ('speechSynthesis' in window) {
+              try {
+                window.speechSynthesis.cancel();
+                const utt = new SpeechSynthesisUtterance(sidewalk.correctionRo);
+                utt.lang = 'ro-RO';
+                utt.rate = 1.05;
+                window.speechSynthesis.speak(utt);
+              } catch {}
+            }
+            if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+              navigator.vibrate([220, 90, 220]);
+            }
           }
 
           setDetectedObstacles(confirmedObstacles);
@@ -465,6 +613,17 @@ export default function CameraObstacleDetector({
 
               emitObstacleAlertEvent(payload);
               if (onObstacleAlert) onObstacleAlert(payload);
+
+              // Avertizare vocală audio pentru obstacole și semafoare dacă nu se rostește deja avertizarea de trotuar
+              if (!needsSidewalkWarning && 'speechSynthesis' in window && voiceEnabled !== false) {
+                try {
+                  window.speechSynthesis.cancel();
+                  const utt = new SpeechSynthesisUtterance(primaryThreat.messageRo);
+                  utt.lang = 'ro-RO';
+                  utt.rate = 1.05;
+                  window.speechSynthesis.speak(utt);
+                } catch {}
+              }
             }
           } else {
             clearFramesRef.current += 1;
@@ -564,6 +723,13 @@ export default function CameraObstacleDetector({
     [facingMode, startDetectionLoop, stopCamera]
   );
 
+  // Auto-start camera when isOpen is set to true
+  useEffect(() => {
+    if (isOpen && !cameraActive && !modelLoading && !error) {
+      startCamera();
+    }
+  }, [isOpen, cameraActive, modelLoading, error, startCamera]);
+
   useEffect(() => {
     if (!isOpen) {
       stopCamera();
@@ -585,11 +751,24 @@ export default function CameraObstacleDetector({
     ? 'calc(100vw - 24px)'
     : expanded ? 'min(94vw, 640px)' : 'min(92vw, 370px)';
 
-  return (
-    <div
-      role="region"
-      aria-label="Detector obstacole cu cameră"
-      style={{
+  const containerStyle = isFullScreen
+    ? {
+        position: 'fixed',
+        inset: 0,
+        width: '100vw',
+        height: '100dvh',
+        zIndex: 1200,
+        background: '#020617',
+        color: '#f8fafc',
+        borderRadius: 0,
+        border: 'none',
+        boxShadow: 'none',
+        overflow: 'hidden',
+        fontFamily: "'Inter', system-ui, sans-serif",
+        display: 'flex',
+        flexDirection: 'column',
+      }
+    : {
         position: 'absolute',
         top: isMobile ? 60 : 74,
         left: isMobile ? 12 : 16,
@@ -601,16 +780,23 @@ export default function CameraObstacleDetector({
         background: '#0f172a',
         color: '#f8fafc',
         borderRadius: 18,
-        border: tiltWarning || activeAlert?.severity === 'danger'
-          ? '2.5px solid #ef4444'
-          : activeAlert?.severity === 'approaching'
-            ? '2.5px solid #f59e0b'
-            : '1.5px solid rgba(255,255,255,0.14)',
+        border:
+          tiltWarning || activeAlert?.severity === 'danger'
+            ? '2.5px solid #ef4444'
+            : activeAlert?.severity === 'approaching'
+              ? '2.5px solid #f59e0b'
+              : '1.5px solid rgba(255,255,255,0.14)',
         boxShadow: '0 20px 45px rgba(0, 0, 0, 0.35)',
         overflow: 'hidden',
         fontFamily: "'Inter', system-ui, sans-serif",
         transition: 'width 0.2s ease, border-color 0.2s ease',
-      }}
+      };
+
+  return (
+    <div
+      role="region"
+      aria-label="Detector obstacole cu cameră"
+      style={containerStyle}
     >
       {/* Header bar */}
       <div
@@ -634,11 +820,36 @@ export default function CameraObstacleDetector({
             }}
           />
           <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.2 }}>
-            Asistent Cameră AI
+            {isFullScreen && isNavigating ? 'Navigație Cameră Asistivă' : 'Asistent Cameră AI'}
           </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            type="button"
+            onClick={() => setOnlyThreats((prev) => !prev)}
+            title={
+              onlyThreats
+                ? 'Filtru activ: doar obstacolele periculoase spre care te îndrepți'
+                : 'Afișare totală: toate obiectele detectate'
+            }
+            aria-label="Comută filtru pericole apropiate"
+            style={{
+              ...iconButtonStyle,
+              width: 'auto',
+              padding: '0 8px',
+              fontSize: 11,
+              fontWeight: 700,
+              background: onlyThreats ? 'rgba(37, 99, 235, 0.4)' : 'rgba(255, 255, 255, 0.1)',
+              border: onlyThreats ? '1px solid #3b82f6' : '1px solid transparent',
+              color: onlyThreats ? '#93c5fd' : '#cbd5e1',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {onlyThreats ? <Target size={12} /> : <Layers size={12} />}
+              <span>{onlyThreats ? 'Doar pericole' : 'Toate detecțiile'}</span>
+            </span>
+          </button>
           <button
             type="button"
             onClick={handleSwitchCamera}
@@ -648,15 +859,37 @@ export default function CameraObstacleDetector({
           >
             <RefreshCw size={15} />
           </button>
-          <button
-            type="button"
-            onClick={() => setExpanded((prev) => !prev)}
-            title={expanded ? 'Micșorează fereastra' : 'Mărește fereastra'}
-            aria-label={expanded ? 'Micșorează fereastra' : 'Mărește fereastra'}
-            style={iconButtonStyle}
-          >
-            {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          </button>
+          {onToggleFullScreen ? (
+            <button
+              type="button"
+              onClick={() => onToggleFullScreen(!isFullScreen)}
+              title={isFullScreen ? 'Comută pe vedere hartă' : 'Mărește camera pe tot ecranul'}
+              aria-label={isFullScreen ? 'Comută pe vedere hartă' : 'Mărește camera pe tot ecranul'}
+              style={{
+                ...iconButtonStyle,
+                ...(isFullScreen ? { width: 'auto', padding: '0 8px', gap: 4, background: '#2563eb', color: '#ffffff' } : {}),
+              }}
+            >
+              {isFullScreen ? (
+                <>
+                  <MapIcon size={13} />
+                  <span style={{ fontSize: 11, fontWeight: 700 }}>Hartă</span>
+                </>
+              ) : (
+                <Maximize2 size={15} />
+              )}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setExpanded((prev) => !prev)}
+              title={expanded ? 'Micșorează fereastra' : 'Mărește fereastra'}
+              aria-label={expanded ? 'Micșorează fereastra' : 'Mărește fereastra'}
+              style={iconButtonStyle}
+            >
+              {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -699,11 +932,14 @@ export default function CameraObstacleDetector({
         style={{
           position: 'relative',
           width: '100%',
-          aspectRatio: '4 / 3',
+          flex: isFullScreen ? 1 : 'none',
+          height: isFullScreen ? '100%' : 'auto',
+          aspectRatio: isFullScreen ? 'unset' : '4 / 3',
           background: '#020617',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          overflow: 'hidden',
         }}
       >
         <video
@@ -820,8 +1056,8 @@ export default function CameraObstacleDetector({
           </div>
         )}
 
-        {/* Live proximity / traffic light / sidewalk alert banner */}
-        {cameraActive && (activeAlert || (sidewalkStatus && (sidewalkStatus.status === 'edge_left' || sidewalkStatus.status === 'edge_right'))) && (
+        {/* Live proximity / traffic light / sidewalk correction banner (when not navigating) */}
+        {cameraActive && !isNavigating && (activeAlert || (sidewalkStatus && sidewalkStatus.action && sidewalkStatus.action !== 'straight')) && (
           <div
             role="alert"
             style={{
@@ -832,9 +1068,9 @@ export default function CameraObstacleDetector({
               padding: '9px 12px',
               borderRadius: 12,
               background:
-                activeAlert?.severity === 'danger'
-                  ? 'rgba(220, 38, 38, 0.92)'
-                  : 'rgba(217, 119, 6, 0.92)',
+                activeAlert?.severity === 'danger' || sidewalkStatus?.action === 'stop'
+                  ? 'rgba(220, 38, 38, 0.94)'
+                  : 'rgba(217, 119, 6, 0.94)',
               color: '#ffffff',
               fontSize: 13,
               fontWeight: 700,
@@ -844,10 +1080,244 @@ export default function CameraObstacleDetector({
               boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
             }}
           >
-            <AlertTriangle size={18} style={{ flexShrink: 0 }} />
-            <span style={{ flex: 1 }}>
-              {activeAlert ? activeAlert.messageRo : sidewalkStatus.messageRo}
+            {sidewalkStatus?.action === 'steer_right' ? (
+              <ArrowRight size={20} style={{ flexShrink: 0, color: '#fde047' }} />
+            ) : sidewalkStatus?.action === 'steer_left' ? (
+              <ArrowLeft size={20} style={{ flexShrink: 0, color: '#fde047' }} />
+            ) : (
+              <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+            )}
+            <span style={{ flex: 1, lineHeight: 1.35 }}>
+              {activeAlert
+                ? activeAlert.messageRo
+                : (sidewalkStatus?.correctionRo || sidewalkStatus?.messageRo)}
             </span>
+          </div>
+        )}
+
+        {/* Bottom Popup Navigation Commands */}
+        {isNavigating && guidance && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              position: 'absolute',
+              bottom: isMobile ? 12 : 20,
+              left: isMobile ? 10 : 20,
+              right: isMobile ? 10 : 20,
+              maxWidth: isFullScreen ? (isMobile ? 'calc(100vw - 20px)' : 640) : 'none',
+              margin: '0 auto',
+              zIndex: 1250,
+              background: 'rgba(15, 23, 42, 0.95)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              borderRadius: 22,
+              border: guidance.isOffRoute
+                ? '2.5px solid #ef4444'
+                : activeAlert?.severity === 'danger'
+                  ? '2.5px solid #ef4444'
+                  : '2.5px solid #2563eb',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)',
+              padding: isMobile ? '12px 14px' : '16px 20px',
+              color: '#ffffff',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              animation: 'slideUpNav 0.25s ease-out',
+            }}
+          >
+            <style>{`
+              @keyframes slideUpNav {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+              }
+            `}</style>
+
+            {/* Sidewalk departure / danger alert pill inside popup if active */}
+            {sidewalkStatus?.action && sidewalkStatus.action !== 'straight' && (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 12,
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)',
+                }}
+              >
+                <Footprints size={18} />
+                <span>{sidewalkStatus.correctionRo}</span>
+              </div>
+            )}
+
+            {activeAlert && (!sidewalkStatus || sidewalkStatus.action === 'straight') && (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 12,
+                  background: activeAlert.severity === 'danger' ? '#dc2626' : '#d97706',
+                  color: '#ffffff',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <ShieldAlert size={18} />
+                <span>
+                  {activeAlert.trafficLightState === 'red'
+                    ? 'Semafor ROȘU pentru pietoni! Oprește-te.'
+                    : activeAlert.trafficLightState === 'green'
+                      ? 'Semafor VERDE! Poți traversa în siguranță.'
+                      : `${activeAlert.labelRo} la ~${activeAlert.distanceMeters}m!`}
+                </span>
+              </div>
+            )}
+
+            {/* Primary Maneuver Row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div
+                style={{
+                  width: isMobile ? 50 : 58,
+                  height: isMobile ? 50 : 58,
+                  borderRadius: 16,
+                  background: guidance.activeStep?.maneuver === 'arrive' ? '#16a34a' : '#2563eb',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  boxShadow: '0 4px 16px rgba(37, 99, 235, 0.45)',
+                }}
+              >
+                {getManeuverIcon(guidance.activeStep?.maneuver, isMobile ? 28 : 34)}
+              </div>
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span
+                    style={{
+                      fontSize: isMobile ? 24 : 30,
+                      fontWeight: 900,
+                      color: guidance.isImminent ? '#4ade80' : '#ffffff',
+                      letterSpacing: '-0.5px',
+                    }}
+                  >
+                    {guidance.isImminent ? 'ACUM' : `${guidance.distToManeuver} m`}
+                  </span>
+                  {guidance.remainingDist != null && (
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                      (total: {guidance.remainingDist >= 1000 ? `${(guidance.remainingDist / 1000).toFixed(1)} km` : `${guidance.remainingDist} m`})
+                    </span>
+                  )}
+                </div>
+                <div
+                  style={{
+                    fontSize: isMobile ? 14.5 : 17,
+                    fontWeight: 700,
+                    color: '#f8fafc',
+                    marginTop: 2,
+                    lineHeight: 1.3,
+                  }}
+                >
+                  {guidance.activeStep?.instructionRo || 'Continuați pe traseu'}
+                </div>
+              </div>
+            </div>
+
+            {/* Next step & Quick action buttons */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingTop: 8,
+                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                fontSize: 12,
+                color: '#94a3b8',
+              }}
+            >
+              <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                {guidance.nextStep ? (
+                  <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                    Urmează: <strong style={{ color: '#e2e8f0' }}>{guidance.nextStep.instructionRo}</strong>
+                  </span>
+                ) : (
+                  <span>Destinația se apropie</span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                {/* Voice toggle */}
+                <button
+                  type="button"
+                  onClick={onToggleVoice}
+                  title={voiceEnabled ? 'Ghidare audio activă' : 'Ghidare audio oprită'}
+                  style={miniControlBtnStyle}
+                >
+                  {voiceEnabled ? <Volume2 size={15} color="#4ade80" /> : <VolumeX size={15} color="#94a3b8" />}
+                </button>
+
+                {/* Demo simulation button */}
+                {onToggleSimulation && (
+                  <button
+                    type="button"
+                    onClick={onToggleSimulation}
+                    title={isSimulating ? 'Oprește simularea' : 'Simulează mersul pe traseu (Demo)'}
+                    style={{
+                      ...miniControlBtnStyle,
+                      background: isSimulating ? '#16a34a' : 'rgba(255, 255, 255, 0.12)',
+                    }}
+                  >
+                    {isSimulating ? <Pause size={14} color="#ffffff" /> : <Play size={14} color="#38bdf8" />}
+                  </button>
+                )}
+
+                {/* View map / minimize toggle */}
+                {onToggleFullScreen && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleFullScreen(false)}
+                    title="Vezi traseul pe hartă"
+                    style={{
+                      ...miniControlBtnStyle,
+                      width: 'auto',
+                      padding: '0 8px',
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      gap: 4,
+                      background: 'rgba(255, 255, 255, 0.12)',
+                      color: '#ffffff',
+                    }}
+                  >
+                    <MapIcon size={13} />
+                    <span>Hartă</span>
+                  </button>
+                )}
+
+                {/* Stop navigation */}
+                {onStopNavigation && (
+                  <button
+                    type="button"
+                    onClick={onStopNavigation}
+                    title="Oprește navigarea"
+                    style={{
+                      ...miniControlBtnStyle,
+                      background: 'rgba(239, 68, 68, 0.25)',
+                      border: '1px solid #ef4444',
+                      color: '#f87171',
+                    }}
+                  >
+                    <Square size={13} />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -871,54 +1341,98 @@ export default function CameraObstacleDetector({
         </div>
       )}
 
-      {/* Footer status & controls */}
-      <div
-        style={{
-          padding: '10px 14px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-          flexWrap: 'wrap',
-          background: '#0f172a',
-          borderTop: '1px solid rgba(255,255,255,0.08)',
-          fontSize: 12,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#94a3b8' }}>
-          {cameraActive ? (
-            activeAlert ? (
-              <>
-                <Radio size={14} color="#fbbf24" />
-                <span style={{ color: '#fde68a', fontWeight: 600 }}>
-                  Alertă emisă ({detectedObstacles.length} obj.)
-                </span>
-              </>
+      {/* Footer status & controls (only in windowed mode) */}
+      {!isFullScreen && (
+        <div
+          style={{
+            padding: '10px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            flexWrap: 'wrap',
+            background: '#0f172a',
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+            fontSize: 12,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#94a3b8' }}>
+            {cameraActive ? (
+              activeAlert ? (
+                <>
+                  <Radio size={14} color="#ef4444" />
+                  <span style={{ color: '#fca5a5', fontWeight: 600 }}>
+                    Pericol apropiat ({detectedObstacles.length} {detectedObstacles.length === 1 ? 'obstacol' : 'obstacole'})
+                  </span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={14} color="#4ade80" />
+                  <span>
+                    {sidewalkStatus?.messageRo || 'Cale liberă — Niciun pericol spre care te îndrepți'}
+                  </span>
+                </>
+              )
             ) : (
-              <>
-                <ShieldCheck size={14} color="#4ade80" />
-                <span>
-                  {sidewalkStatus?.messageRo || 'Trotuar liber'}
-                </span>
-              </>
-            )
-          ) : (
-            <span>{modelReady ? 'Model AI pregătit' : 'Cameră oprită'}</span>
-          )}
-        </div>
+              <span>{modelReady ? 'Model AI pregătit' : 'Cameră oprită'}</span>
+            )}
+          </div>
 
-        {cameraActive && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {!isRecordingDetour ? (
+          {cameraActive && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {!isRecordingDetour ? (
+                <button
+                  type="button"
+                  onClick={() => startDetourRecording(activeAlert)}
+                  title="Începe înregistrarea traseului de ocolire pentru acest obstacol"
+                  style={{
+                    padding: '6px 10px',
+                    background: '#1e293b',
+                    color: '#93c5fd',
+                    border: '1px solid #3b82f6',
+                    borderRadius: 8,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                  }}
+                >
+                  <Route size={13} />
+                  Ocolire
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={finishDetourRecording}
+                  style={{
+                    padding: '6px 10px',
+                    background: '#16a34a',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 8,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                  }}
+                >
+                  <CheckCircle2 size={13} />
+                  Salvează Ocolirea
+                </button>
+              )}
+
               <button
                 type="button"
-                onClick={() => startDetourRecording(activeAlert)}
-                title="Începe înregistrarea traseului de ocolire pentru acest obstacol"
+                onClick={stopCamera}
                 style={{
                   padding: '6px 10px',
-                  background: '#1e293b',
-                  color: '#93c5fd',
-                  border: '1px solid #3b82f6',
+                  background: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
                   borderRadius: 8,
                   fontSize: 11.5,
                   fontWeight: 600,
@@ -928,58 +1442,30 @@ export default function CameraObstacleDetector({
                   gap: 5,
                 }}
               >
-                <Route size={13} />
-                Ocolire
+                <CameraOff size={13} />
+                Oprește
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={finishDetourRecording}
-                style={{
-                  padding: '6px 10px',
-                  background: '#16a34a',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: 8,
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                }}
-              >
-                <CheckCircle2 size={13} />
-                Salvează Ocolirea
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={stopCamera}
-              style={{
-                padding: '6px 10px',
-                background: '#ef4444',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: 8,
-                fontSize: 11.5,
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-              }}
-            >
-              <CameraOff size={13} />
-              Oprește
-            </button>
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
+const miniControlBtnStyle = {
+  width: 30,
+  height: 30,
+  borderRadius: 8,
+  border: 'none',
+  background: 'rgba(255, 255, 255, 0.1)',
+  color: '#e2e8f0',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  transition: 'background 0.15s ease',
+};
 
 const iconButtonStyle = {
   background: 'rgba(255, 255, 255, 0.1)',

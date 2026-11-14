@@ -16,6 +16,14 @@ const EMERGENCY_TRIGGERS = [
   'ajutor', 'urgență', 'urgenta', '112', 'sos',
 ];
 
+const NAV_GUIDANCE_TRIGGERS = [
+  'pe unde trebuie să o iau', 'pe unde o iau', 'pe unde merg',
+  'încotro o iau', 'incotro o iau', 'următorul pas', 'urmatorul pas',
+  'pe unde să merg', 'pe unde sa merg', 'ghidează-mă', 'ghideaza-ma',
+  'start navigare', 'pornește navigarea', 'porneste navigarea', 'navigare pas cu pas',
+  'pe unde tre sa o iau', 'pe unde trebe sa o iau',
+];
+
 const NAV_DESTINATION_PREFIXES = [
   /^(du-mă la|du ma la|du-mă spre|du ma spre)\s+/,
   /^(vreau să merg la|vreau sa merg la)\s+/,
@@ -47,6 +55,7 @@ export function useVoiceAssistant({
   onEmergency,
   onCameraOpen,
   onCameraClose,
+  onStartNavigation,
   alwaysOn = false,          // dacă true, pornește microfonul automat și îl ține activ
 }) {
   const [isListening, setIsListening] = useState(false);
@@ -100,7 +109,14 @@ export function useVoiceAssistant({
       return;
     }
 
-    // 4. Destinație navigare
+    // 4. Solicitare ghidare / start navigare în timp real
+    if (containsAny(lower, NAV_GUIDANCE_TRIGGERS)) {
+      speak('Pornesc ghidarea pas-cu-pas în timp real.');
+      if (onStartNavigation) onStartNavigation();
+      return;
+    }
+
+    // 5. Destinație navigare
     const hasNavPrefix = NAV_DESTINATION_PREFIXES.some((p) => p.test(lower));
     const address = extractAddress(spoken);
 
@@ -109,9 +125,9 @@ export function useVoiceAssistant({
       return;
     }
 
-    // 5. Nu am recunoscut comanda
-    speak('Nu am înțeles comanda. Spune, de exemplu: Du-mă la Piața Victoriei sau Deschide camera.');
-  }, [speak, onEmergency, onCameraOpen, onCameraClose, onDestinationRecognized]);
+    // 6. Nu am recunoscut comanda
+    speak('Nu am înțeles comanda. Spune, de exemplu: Du-mă la Piața Victoriei, Pe unde trebuie să o iau, sau Deschide camera.');
+  }, [speak, onEmergency, onCameraOpen, onCameraClose, onStartNavigation, onDestinationRecognized]);
 
   // ─── Pornire recognition ──────────────────────────────────────────────────
   const startListening = useCallback(() => {

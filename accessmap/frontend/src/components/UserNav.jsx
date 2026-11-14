@@ -35,14 +35,7 @@ export default function UserNav({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const getProfileLabel = (prof) => {
-    switch (prof) {
-      case 'wheelchair': return '♿ Scaun rulant';
-      case 'limited_mobility': return '🚶‍♂️ Mobilitate redusă';
-      case 'pedestrian': return '🚶 Pieton';
-      default: return '♿ Navigare accesibilă';
-    }
-  };
+  const getProfileLabel = () => 'Asistență Nevăzători';
 
   const getInitials = (name) => {
     if (!name) return 'U';
@@ -239,44 +232,27 @@ export default function UserNav({
                 </div>
               </div>
 
-              {/* Comutare rapidă profil de navigare */}
-              <div style={{ padding: '6px 8px', fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
-                Schimbă Modul de Navigare
+              {/* Profil dedicat activ */}
+              <div style={{
+                margin: '4px 0 8px',
+                padding: '10px 12px',
+                borderRadius: 10,
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}>
+                <Eye size={16} color="#2563eb" />
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#1e40af' }}>
+                    Profil Nevăzători Activ
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#3b82f6' }}>
+                    Ghidare vocală & alertă părăsire trotuar
+                  </div>
+                </div>
               </div>
-
-              {[
-                { id: 'wheelchair', label: 'Scaun rulant', icon: '♿' },
-                { id: 'limited_mobility', label: 'Mobilitate redusă', icon: '🚶‍♂️' },
-                { id: 'pedestrian', label: 'Pieton standard', icon: '🚶' },
-              ].map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => {
-                    if (onProfileChange) onProfileChange(p.id);
-                  }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    border: 'none',
-                    borderRadius: 8,
-                    backgroundColor: currentProfile === p.id ? '#eff6ff' : 'transparent',
-                    color: currentProfile === p.id ? '#1d4ed8' : '#334155',
-                    fontSize: 13,
-                    fontWeight: currentProfile === p.id ? 600 : 500,
-                    cursor: 'pointer',
-                    transition: 'background 0.15s',
-                  }}
-                >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>{p.icon}</span>
-                    <span>{p.label}</span>
-                  </span>
-                  {currentProfile === p.id && <Check size={15} style={{ color: '#2563eb' }} />}
-                </button>
-              ))}
 
               <div style={{ height: 1, backgroundColor: '#f1f5f9', margin: '8px 0' }} />
 

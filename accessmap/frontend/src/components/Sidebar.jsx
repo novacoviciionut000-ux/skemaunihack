@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import ProfilePicker from './ProfilePicker';
 import ReportButton from './ReportButton';
 import LocationInput from './LocationInput';
-import { MapPin, Flag, RotateCcw, ChevronUp, ChevronDown, Camera } from 'lucide-react';
+import { MapPin, Flag, RotateCcw, ChevronUp, ChevronDown, Camera, Eye, ShieldCheck } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 export default function Sidebar({
@@ -61,7 +60,7 @@ export default function Sidebar({
             }}
           >
             {collapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            {collapsed ? (isMobile ? 'Planificator & Cameră' : 'Show Route Planner') : (isMobile ? 'Ascunde' : 'Hide Controls')}
+            {collapsed ? 'Planificator Asistiv' : 'Ascunde Planificatorul'}
           </button>
         </div>
 
@@ -77,8 +76,67 @@ export default function Sidebar({
           maxHeight: isMobile ? '72dvh' : 'none',
           overflowY: isMobile ? 'auto' : 'visible',
         }}>
-          {/* Profile picker */}
-          <ProfilePicker selected={profile} onSelect={onProfileChange} />
+          {/* Asistență Nevăzători: indicator mod activ & buton cameră */}
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 14,
+              background: '#0f172a',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  background: 'rgba(37, 99, 235, 0.25)',
+                  border: '1px solid #3b82f6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#60a5fa',
+                  flexShrink: 0,
+                }}
+              >
+                <Eye size={20} />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>
+                  Mod Asistență Nevăzători
+                </div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>
+                  Ghidare audio, menținere pe trotuar și evitare obstacole
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onToggleCamera}
+              style={{
+                background: cameraOpen ? '#2563eb' : 'rgba(255, 255, 255, 0.12)',
+                color: '#ffffff',
+                border: cameraOpen ? 'none' : '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: 10,
+                padding: '8px 12px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                flexShrink: 0,
+              }}
+            >
+              <Camera size={15} />
+              <span>{cameraOpen ? 'Cameră Activă' : 'Cameră AI'}</span>
+            </button>
+          </div>
 
           {/* Location inputs with live autocomplete */}
           <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -88,7 +146,7 @@ export default function Sidebar({
               iconColor="#16a34a"
               iconBg="#dcfce7"
               point={start}
-              placeholder="Starting point — type to search or click map"
+              placeholder="Punct de plecare — caută adresa sau selectează pe hartă"
               onSelect={(place) => {
                 onSetStart({ lat: place.lat, lng: place.lng });
                 setPlacingMode('end');
@@ -103,7 +161,7 @@ export default function Sidebar({
               iconColor="#2563eb"
               iconBg="#dbeafe"
               point={destination}
-              placeholder="Destination — type to search or click map"
+              placeholder="Destinație — caută adresa sau selectează pe hartă"
               onSelect={(place) => {
                 onSetDestination({ lat: place.lat, lng: place.lng });
                 setPlacingMode(null);

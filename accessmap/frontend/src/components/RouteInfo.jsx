@@ -1,9 +1,18 @@
 import React from 'react';
-import { Clock, Navigation, AlertCircle, X, ShieldCheck } from 'lucide-react';
+import { Clock, Navigation, AlertCircle, X, ShieldCheck, AlertTriangle, Eye } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
 
-export default function RouteInfo({ routeData, loading, error, onClear }) {
+export default function RouteInfo({
+  routeData,
+  loading,
+  error,
+  onClear,
+  onStartNavigation,
+  isNavigating,
+}) {
   const isMobile = useIsMobile();
+
+  if (isNavigating) return null; // Turn-by-turn guidance banner takes over in navigation mode
 
   if (loading) {
     return (
@@ -32,7 +41,7 @@ export default function RouteInfo({ routeData, loading, error, onClear }) {
         }} />
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
         <span style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>
-          Calculating accessible route...
+          Se calculează traseul accesibil...
         </span>
       </div>
     );
@@ -85,7 +94,7 @@ export default function RouteInfo({ routeData, loading, error, onClear }) {
     : `${Math.round(distMeters)} m`;
 
   // Format duration
-  const totalSeconds = routeData.timeSeconds || Math.round((distMeters / 1.1)); // ~4 km/h wheelchair / walking speed
+  const totalSeconds = routeData.timeSeconds || Math.round((distMeters / 1.15)); // ~4.1 km/h walking speed with cane
   const mins = Math.max(1, Math.round(totalSeconds / 60));
   const timeFormatted = mins >= 60
     ? `${Math.floor(mins / 60)}h ${mins % 60}m`
@@ -108,14 +117,14 @@ export default function RouteInfo({ routeData, loading, error, onClear }) {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#16a34a' }}>
-          <ShieldCheck size={18} />
+          <Eye size={18} />
           <span style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Accessible Path
+            Traseu Asistiv Nevăzători
           </span>
         </div>
         <button
           onClick={onClear}
-          title="Clear route"
+          title="Închide traseul"
           style={{
             background: '#f3f4f6',
             border: 'none',
@@ -137,7 +146,7 @@ export default function RouteInfo({ routeData, loading, error, onClear }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#6b7280', fontSize: 12 }}>
             <Clock size={14} />
-            <span>Estimated time</span>
+            <span>Timp estimat</span>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#111827', marginTop: 2 }}>
             {timeFormatted}
@@ -149,13 +158,41 @@ export default function RouteInfo({ routeData, loading, error, onClear }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#6b7280', fontSize: 12 }}>
             <Navigation size={14} />
-            <span>Distance</span>
+            <span>Distanță</span>
           </div>
           <div style={{ fontSize: 22, fontWeight: 800, color: '#111827', marginTop: 2 }}>
             {distFormatted}
           </div>
         </div>
       </div>
+
+      {/* Start Turn-by-Turn Navigation Button */}
+      {onStartNavigation && (
+        <button
+          onClick={onStartNavigation}
+          style={{
+            marginTop: 12,
+            width: '100%',
+            padding: '10px 16px',
+            background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: 12,
+            fontSize: 13.5,
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Navigation size={16} />
+          <span>Începe Navigarea Pas-cu-Pas</span>
+        </button>
+      )}
 
       {routeData.isFallback && (
         <div style={{
@@ -169,7 +206,8 @@ export default function RouteInfo({ routeData, loading, error, onClear }) {
           alignItems: 'center',
           gap: 6,
         }}>
-          <span>⚠️ GraphHopper preview path</span>
+          <AlertTriangle size={13} color="#92400e" />
+          <span>Traseu estimat preview</span>
         </div>
       )}
     </div>

@@ -2,14 +2,20 @@ import { useState, useEffect } from 'react';
 import { useVoiceAssistant } from '../hooks/useVoiceAssistant';
 import { geocodeAddress } from '../api/client';
 
-export default function VoiceButton({ onDestinationSet, onEmergency, onCameraOpen, onCameraClose }) {
+export default function VoiceButton({
+  onDestinationSet,
+  onEmergency,
+  onCameraOpen,
+  onCameraClose,
+  onStartNavigation,
+}) {
   const [statusMessage, setStatusMessage] = useState('');
   const [statusType, setStatusType] = useState('info'); // 'info' | 'success' | 'error'
   const [alwaysOn, setAlwaysOn] = useState(false);
 
   // ── Geocodare adresă recunoscută vocal ─────────────────────────────────
   const handleDestinationRecognized = async (spokenAddress) => {
-    setStatusMessage(`🔍 Caut: "${spokenAddress}"...`);
+    setStatusMessage(`Căutare: "${spokenAddress}"...`);
     setStatusType('info');
 
     try {
@@ -19,13 +25,13 @@ export default function VoiceButton({ onDestinationSet, onEmergency, onCameraOpe
 
       if (!lat || !lng) {
         speak(`Nu am găsit "${spokenAddress}" în Timișoara. Încearcă o adresă mai precisă.`);
-        setStatusMessage(`❌ Adresă negăsită: "${spokenAddress}"`);
+        setStatusMessage(`Adresă negăsită: "${spokenAddress}"`);
         setStatusType('error');
         return;
       }
 
       const resolvedName = place.displayName || place.name || spokenAddress;
-      setStatusMessage(`✅ Destinație: ${resolvedName}`);
+      setStatusMessage(`Destinație: ${resolvedName}`);
       setStatusType('success');
       speak(`Am setat destinația către ${resolvedName}. Calculez ruta accesibilă.`);
 
@@ -33,7 +39,7 @@ export default function VoiceButton({ onDestinationSet, onEmergency, onCameraOpe
     } catch (err) {
       console.error('Geocoding error:', err);
       speak('Eroare de conexiune. Verifică internetul și încearcă din nou.');
-      setStatusMessage('❌ Eroare de conexiune cu serverul');
+      setStatusMessage('Eroare de conexiune cu serverul');
       setStatusType('error');
     }
   };
@@ -51,19 +57,24 @@ export default function VoiceButton({ onDestinationSet, onEmergency, onCameraOpe
   } = useVoiceAssistant({
     onDestinationRecognized: handleDestinationRecognized,
     onEmergency: () => {
-      setStatusMessage('🚨 URGENȚĂ ACTIVATĂ – se apelează 112');
+      setStatusMessage('Urgență 112 activată');
       setStatusType('error');
       if (onEmergency) onEmergency();
     },
     onCameraOpen: () => {
-      setStatusMessage('📷 Camera deschisă');
+      setStatusMessage('Cameră activă');
       setStatusType('success');
       if (onCameraOpen) onCameraOpen();
     },
     onCameraClose: () => {
-      setStatusMessage('📷 Camera închisă');
+      setStatusMessage('Cameră oprită');
       setStatusType('info');
       if (onCameraClose) onCameraClose();
+    },
+    onStartNavigation: () => {
+      setStatusMessage('Navigare în timp real activă');
+      setStatusType('success');
+      if (onStartNavigation) onStartNavigation();
     },
     alwaysOn: false, // controlăm manual din UI
   });
@@ -71,7 +82,7 @@ export default function VoiceButton({ onDestinationSet, onEmergency, onCameraOpe
   // Afișăm erorile hook-ului
   useEffect(() => {
     if (error) {
-      setStatusMessage(`⚠️ ${error}`);
+      setStatusMessage(error);
       setStatusType('error');
     }
   }, [error]);
@@ -81,14 +92,14 @@ export default function VoiceButton({ onDestinationSet, onEmergency, onCameraOpe
     if (alwaysOn) {
       stopAlwaysOn();
       setAlwaysOn(false);
-      setStatusMessage('🔇 Microfon oprit');
+      setStatusMessage('Microfon oprit');
       setStatusType('info');
     } else {
       speak('Asistent vocal activat. Poți spune comenzi oricând.');
       setTimeout(() => {
         startAlwaysOn();
         setAlwaysOn(true);
-        setStatusMessage('🎙️ Ascult permanent...');
+        setStatusMessage('Ascultare permanentă activă...');
         setStatusType('success');
       }, 1200);
     }

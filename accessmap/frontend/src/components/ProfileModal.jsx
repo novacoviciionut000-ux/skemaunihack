@@ -17,7 +17,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
   const { user, updateProfile } = useAuth();
 
   const [fullName, setFullName] = useState(user?.fullName || '');
-  const [preferredProfile, setPreferredProfile] = useState(user?.preferredProfile || 'wheelchair');
+  const [preferredProfile, setPreferredProfile] = useState(user?.preferredProfile || 'low_vision');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -231,35 +231,23 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
           </div>
 
           {/* Profil preferat */}
-          <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>
-              Profil preferat de navigare
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-              {[
-                { id: 'wheelchair', label: '♿ Scaun rulant' },
-                { id: 'limited_mobility', label: '🚶‍♂️ Mobilitate redusă' },
-                { id: 'pedestrian', label: '🚶 Pieton' }
-              ].map(p => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setPreferredProfile(p.id)}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: 10,
-                    border: `1.5px solid ${preferredProfile === p.id ? '#2563eb' : '#e2e8f0'}`,
-                    backgroundColor: preferredProfile === p.id ? '#eff6ff' : '#ffffff',
-                    color: preferredProfile === p.id ? '#1d4ed8' : '#475569',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
+          <div style={{
+            padding: '12px 14px',
+            borderRadius: 12,
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}>
+            <Eye size={18} color="#2563eb" />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>
+                Profil: Asistență Nevăzători
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                Configurat automat pentru sinteză vocală în limba română și monitorizare trotuar.
+              </div>
             </div>
           </div>
 

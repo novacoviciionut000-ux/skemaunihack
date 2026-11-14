@@ -11,7 +11,20 @@ import {
   ZoomControl,
 } from 'react-leaflet';
 import L from 'leaflet';
-import { Layers, Check, Crosshair, Loader2, Navigation } from 'lucide-react';
+import {
+  Layers,
+  Check,
+  Crosshair,
+  Loader2,
+  Navigation,
+  Map as MapIcon,
+  Globe,
+  Eye,
+  Mountain,
+  Contrast,
+  MapPin,
+  Flag,
+} from 'lucide-react';
 import ReportMarker from './ReportMarker';
 import { useIsMobile } from '../hooks/useIsMobile';
 import 'leaflet/dist/leaflet.css';
@@ -43,65 +56,87 @@ const endIcon = new L.Icon({
   shadowSize: [41, 41],
 });
 
-// User live location pulsing marker
-const userLocationIcon = L.divIcon({
-  className: 'user-marker-container',
-  html: `
-    <div style="position: relative; width: 22px; height: 22px;">
-      <div class="user-pulse-ring"></div>
-      <div class="user-location-dot"></div>
-    </div>
-  `,
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
-});
+// Real-time animated user client marker strictly tailored for blind/visually impaired navigation
+export function createUserPuckIcon(heading = null) {
+  const rotStyle = heading != null ? `transform: rotate(${heading}deg);` : '';
+
+  return L.divIcon({
+    className: 'user-marker-container',
+    html: `
+      <div class="realtime-puck-container">
+        <div class="realtime-pulse-ring"></div>
+        <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; ${rotStyle} transition: transform 0.25s linear;">
+          ${heading != null ? '<div class="realtime-radar-cone"></div>' : ''}
+          ${heading != null ? '<div class="realtime-heading-arrow"></div>' : ''}
+          <div class="realtime-puck-core">
+            <span style="font-size: 14px;">🦯</span>
+          </div>
+        </div>
+      </div>
+    `,
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
+    popupAnchor: [0, -22],
+  });
+}
+
+export function renderMapStyleIcon(iconType, size = 17) {
+  switch (iconType) {
+    case 'satellite': return <Globe size={size} color="#0284c7" />;
+    case 'accessibility': return <Eye size={size} color="#16a34a" />;
+    case 'topo': return <Mountain size={size} color="#d97706" />;
+    case 'contrast': return <Contrast size={size} color="#7c3aed" />;
+    case 'map':
+    default: return <MapIcon size={size} color="#2563eb" />;
+  }
+}
 
 // 100% FREE Public Tile Layers (ZERO API Key Required)
 export const MAP_STYLES = {
   osm: {
     id: 'osm',
-    name: 'Street Map',
-    subtitle: 'Standard OpenStreetMap',
+    name: 'Hartă Stradală',
+    subtitle: 'OpenStreetMap standard',
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    attribution: '&copy; OpenStreetMap contributors',
     maxZoom: 19,
-    icon: '🗺️',
+    iconType: 'map',
   },
   satellite: {
     id: 'satellite',
-    name: 'Satellite Aerial',
-    subtitle: 'High-res Esri imagery',
+    name: 'Satelit Aerial',
+    subtitle: 'Imagini Esri de înaltă rezoluție',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP',
+    attribution: 'Tiles &copy; Esri',
     maxZoom: 19,
-    icon: '🛰️',
+    iconType: 'satellite',
   },
   accessibility: {
     id: 'accessibility',
-    name: 'Accessible Paths',
-    subtitle: 'CyclOSM: sidewalks & ramps',
+    name: 'Trotuare & Marcaje',
+    subtitle: 'CyclOSM: căi pietonale',
     url: 'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.cyclosm.org">CyclOSM</a> | Map data &copy; OSM',
+    attribution: '&copy; CyclOSM | Map data &copy; OSM',
     maxZoom: 18,
-    icon: '♿',
+    iconType: 'accessibility',
   },
   topo: {
     id: 'topo',
-    name: 'Topographic',
-    subtitle: 'Elevation & terrain lines',
+    name: 'Topografic',
+    subtitle: 'Curbe de nivel și relief',
     url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution: 'Map data &copy; OSM, SRTM | Style &copy; OpenTopoMap',
+    attribution: 'Map data &copy; OSM, SRTM',
     maxZoom: 17,
-    icon: '⛰️',
+    iconType: 'topo',
   },
   hot: {
     id: 'hot',
-    name: 'High Contrast',
-    subtitle: 'Humanitarian OSM (clear roads)',
+    name: 'Contrast Înalt',
+    subtitle: 'Humanitarian OSM (accentuat)',
     url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
     attribution: '&copy; OSM contributors, Tiles by HOT',
     maxZoom: 19,
-    icon: '📍',
+    iconType: 'contrast',
   },
 };
 
@@ -118,8 +153,14 @@ function MapClickHandler({ onMapClick }) {
 }
 
 // Map center and flyTo controller
-function MapController({ centerTarget }) {
+function MapController({ centerTarget, followUser, userLocation }) {
   const map = useMap();
+
+  useEffect(() => {
+    if (followUser && userLocation && userLocation.lat && userLocation.lng) {
+      map.panTo([userLocation.lat, userLocation.lng], { animate: true, duration: 0.6 });
+    }
+  }, [followUser, userLocation?.lat, userLocation?.lng, map]);
 
   useEffect(() => {
     if (centerTarget && centerTarget.lat && centerTarget.lng) {
@@ -199,6 +240,8 @@ export default function Map({
   isLocating,
   onLocateMe,
   onUseAsStart,
+  profile = 'wheelchair',
+  followUser = false,
 }) {
   const isMobile = useIsMobile();
   const [activeStyle, setActiveStyle] = useState('osm');
@@ -238,7 +281,10 @@ export default function Map({
           title="Schimbă stilul hărții"
         >
           <Layers size={isMobile ? 15 : 18} color="#2563eb" />
-          <span>{currentTileConfig.icon} {isMobile ? 'Hartă' : currentTileConfig.name}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {renderMapStyleIcon(currentTileConfig.iconType, 16)}
+            <span>{isMobile ? 'Hartă' : currentTileConfig.name}</span>
+          </span>
         </button>
 
         {showStyleMenu && (
@@ -291,7 +337,17 @@ export default function Map({
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 18 }}>{style.icon}</span>
+                    <div style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 8,
+                      background: isSelected ? '#dbeafe' : '#f1f5f9',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      {renderMapStyleIcon(style.iconType, 16)}
+                    </div>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: isSelected ? 700 : 600 }}>{style.name}</div>
                       <div style={{ fontSize: 10, color: isSelected ? '#3b82f6' : '#9ca3af' }}>{style.subtitle}</div>
@@ -353,31 +409,44 @@ export default function Map({
         />
 
         <MapClickHandler onMapClick={onMapClick} />
-        <MapController centerTarget={centerTarget} />
+        <MapController centerTarget={centerTarget} followUser={followUser} userLocation={userLocation} />
         <FitBounds start={start} destination={destination} routeData={routeData} />
 
-        {/* User Current Live Location (Pulsing marker + accuracy ring) */}
+        {/* User Current Live Location (Real-time animated puck with orientation beam & pulse) */}
         {userLocation && (
           <>
             <Circle
               center={[userLocation.lat, userLocation.lng]}
-              radius={userLocation.accuracy ? Math.min(Math.max(userLocation.accuracy, 20), 100) : 35}
+              radius={userLocation.accuracy ? Math.min(Math.max(userLocation.accuracy, 15), 60) : 25}
               pathOptions={{
                 color: '#2563eb',
                 fillColor: '#3b82f6',
-                fillOpacity: 0.14,
+                fillOpacity: 0.12,
                 weight: 1.5,
               }}
             />
-            <Marker position={[userLocation.lat, userLocation.lng]} icon={userLocationIcon}>
+            <Marker
+              position={[userLocation.lat, userLocation.lng]}
+              icon={createUserPuckIcon(userLocation.heading)}
+            >
               <Popup>
                 <div style={{ fontFamily: 'system-ui, sans-serif', padding: 2 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#1e40af', marginBottom: 4 }}>
-                    📍 Ești aici
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#1e40af', marginBottom: 2 }}>
+                    Poziția ta (GPS Live)
                   </div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>
                     [{userLocation.lat.toFixed(5)}, {userLocation.lng.toFixed(5)}]
                   </div>
+                  {userLocation.heading != null && (
+                    <div style={{ fontSize: 11, color: '#0369a1', fontWeight: 600, marginBottom: 4 }}>
+                      Direcție de deplasare: {Math.round(userLocation.heading)}°
+                    </div>
+                  )}
+                  {userLocation.speed != null && userLocation.speed > 0 && (
+                    <div style={{ fontSize: 11, color: '#047857', fontWeight: 600, marginBottom: 6 }}>
+                      Viteză de mers: {(userLocation.speed * 3.6).toFixed(1)} km/h
+                    </div>
+                  )}
                   {onUseAsStart && (
                     <button
                       onClick={() => onUseAsStart({ lat: userLocation.lat, lng: userLocation.lng })}
@@ -412,7 +481,7 @@ export default function Map({
           <DraggableMarker
             position={start}
             icon={startIcon}
-            popupText="📍 Punct de plecare"
+            popupText="Punct de plecare"
             onDragEnd={(pos) => {
               if (onStartChange) onStartChange(pos);
               else if (onMapClick) onMapClick(pos);
@@ -425,7 +494,7 @@ export default function Map({
           <DraggableMarker
             position={destination}
             icon={endIcon}
-            popupText="🏁 Destinație"
+            popupText="Destinație"
             onDragEnd={(pos) => {
               if (onDestinationChange) onDestinationChange(pos);
             }}
@@ -473,7 +542,7 @@ export default function Map({
                   }}
                 >
                   <Popup>
-                    <strong>🚧 {detour.labelRo || 'Obstacol'} (ocolire salvată)</strong>
+                    <strong>Obstacol semnalat: {detour.labelRo || 'Obstacol'}</strong>
                   </Popup>
                 </Circle>
               )}
@@ -488,7 +557,7 @@ export default function Map({
                   }}
                 >
                   <Popup>
-                    <strong>🔄 Traseu de ocolire salvat</strong>
+                    <strong>Traseu de ocolire trotuar</strong>
                     <br />
                     <small>Evită: {detour.labelRo || 'Obstacol'}</small>
                   </Popup>

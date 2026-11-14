@@ -103,7 +103,7 @@ export const authLogin = async ({ usernameOrEmail, password }) => {
                     fullName: 'Utilizator Demo',
                     role: 'ROLE_USER',
                     provider: 'LOCAL',
-                    preferredProfile: 'wheelchair',
+                    preferredProfile: 'low_vision',
                     message: 'Autentificare demonstrativă offline reușită!',
                 };
                 setStoredAuth(mock.token, mock);
@@ -140,7 +140,7 @@ export const authRegister = async (data) => {
                 fullName: data.fullName || data.username,
                 role: 'ROLE_USER',
                 provider: 'LOCAL',
-                preferredProfile: data.preferredProfile || 'wheelchair',
+                preferredProfile: data.preferredProfile || 'low_vision',
                 message: 'Cont demonstrativ creat offline!',
             };
             setStoredAuth(mock.token, mock);
@@ -178,7 +178,7 @@ export const authOAuth = async (provider, payload) => {
                 avatarUrl: payload.avatarUrl || null,
                 role: 'ROLE_USER',
                 provider: provider.toUpperCase(),
-                preferredProfile: 'wheelchair',
+                preferredProfile: 'low_vision',
                 message: `Autentificare demonstrativă ${provider.toUpperCase()} reușită!`,
             };
             setStoredAuth(mock.token, mock);
@@ -316,7 +316,7 @@ export const geocodeAddress = async (query) => {
 };
 
 /** GET /api/v1/route -> { coordinates: [[lat, lng]], distanceMeters, timeSeconds } */
-export const getRoute = async (startCoords, endCoords, profile = 'wheelchair') => {
+export const getRoute = async (startCoords, endCoords, profile = 'low_vision') => {
     // 1. Încercăm backend-ul Spring Boot (care apelează GraphHopper local cu profilul dedicat de mobilitate)
     try {
         const params = new URLSearchParams({

@@ -357,31 +357,123 @@ export function analyzeSidewalkPath(frameSample, obstacles = [], prevState = nul
     status = rawStatus;
   }
 
+  // Group detected obstacles by zone to ensure steering corrections do not cause collisions
+  const leftObstacles = obstacles.filter(
+    (o) => o.isConfirmed !== false && o.zone === 'left' && o.distanceMeters <= 3.8
+  );
+  const centerObstacles = obstacles.filter(
+    (o) => o.isConfirmed !== false && o.zone === 'center' && o.distanceMeters <= 4.0
+  );
+  const rightObstacles = obstacles.filter(
+    (o) => o.isConfirmed !== false && o.zone === 'right' && o.distanceMeters <= 3.8
+  );
+
+  const hasCloseCenterObstacle = centerObstacles.some((o) => o.distanceMeters <= 2.5);
+  const hasCloseLeftObstacle = leftObstacles.some((o) => o.distanceMeters <= 2.2);
+  const hasCloseRightObstacle = rightObstacles.some((o) => o.distanceMeters <= 2.2);
+
+  let action = 'straight';
+  let safeZone = 'center';
+  let correctionRo = 'Traiectorie sigură pe trotuar — continuă înainte.';
   let messageRo = 'Trotuar liber în față';
-  if (status === 'blocked') {
-    messageRo = 'Obstacol pe trotuar în față';
-  } else if (status === 'edge_left') {
-    messageRo = 'Margine trotuar în stânga — mergi ușor spre dreapta';
+
+  if (status === 'edge_left') {
+    messageRo = 'Deviere spre marginea stângă a trotuarului';
+    if (hasCloseRightObstacle) {
+      if (!hasCloseCenterObstacle) {
+        action = 'steer_center';
+        safeZone = 'center';
+        const obsName = (rightObstacles[0]?.labelRo || 'obstacol').toLowerCase();
+        correctionRo = `Atenție: margine în stânga! Rămâi pe centru — ai ${obsName} în dreapta.`;
+      } else {
+        action = 'stop';
+        safeZone = 'none';
+        correctionRo = 'Oprește-te! Bordură în stânga și obstacol în față pe trotuar.';
+      }
+    } else {
+      action = 'steer_right';
+      safeZone = 'right';
+      correctionRo = 'Te abați spre marginea din stânga! Fă 2 pași spre dreapta pentru a rămâne pe trotuar.';
+    }
   } else if (status === 'edge_right') {
-    messageRo = 'Margine trotuar în dreapta — mergi ușor spre stânga';
+    messageRo = 'Deviere spre marginea dreaptă a trotuarului';
+    if (hasCloseLeftObstacle) {
+      if (!hasCloseCenterObstacle) {
+        action = 'steer_center';
+        safeZone = 'center';
+        const obsName = (leftObstacles[0]?.labelRo || 'obstacol').toLowerCase();
+        correctionRo = `Atenție: margine în dreapta! Rămâi pe centru — ai ${obsName} în stânga.`;
+      } else {
+        action = 'stop';
+        safeZone = 'none';
+        correctionRo = 'Oprește-te! Bordură în dreapta și obstacol în față pe trotuar.';
+      }
+    } else {
+      action = 'steer_left';
+      safeZone = 'left';
+      correctionRo = 'Te abați spre marginea din dreapta! Fă 2 pași spre stânga pentru a rămâne pe trotuar.';
+    }
+  } else if (status === 'blocked' || hasCloseCenterObstacle) {
+    const obsName = (centerObstacles[0]?.labelRo || 'obstacol').toLowerCase();
+    messageRo = `Obstacol pe trotuar în față: ${obsName}`;
+    if (!leftEdge && !hasCloseLeftObstacle) {
+      action = 'bypass_left';
+      safeZone = 'left';
+      correctionRo = `Atenție, ${obsName} în față! Ocolește ușor prin stânga, trotuarul continuă liber.`;
+    } else if (!rightEdge && !hasCloseRightObstacle) {
+      action = 'bypass_right';
+      safeZone = 'right';
+      correctionRo = `Atenție, ${obsName} în față! Ocolește ușor prin dreapta, trotuarul continuă liber.`;
+    } else {
+      action = 'stop';
+      safeZone = 'none';
+      correctionRo = `Oprește-te! ${obsName.toUpperCase()} în față și trotuar îngust fără trecere sigură.`;
+    }
   }
 
   return {
     status,
+    action,
+    safeZone,
+    correctionRo,
+    messageRo,
     leftEdge,
     rightEdge,
     leftScore: Math.round(leftScore),
     rightScore: Math.round(rightScore),
     candidateStatus,
     candidateFrames,
-    messageRo,
   };
 }
+
+const HAZARDOUS_OBSTACLE_CLASSES = new Set([
+  'person',
+  'bicycle',
+  'car',
+  'motorcycle',
+  'bus',
+  'truck',
+  'traffic light',
+  'fire hydrant',
+  'stop sign',
+  'parking meter',
+  'bench',
+  'chair',
+  'couch',
+  'dining table',
+  'potted plant',
+  'suitcase',
+  'dog',
+]);
 
 /**
  * Processes raw COCO-SSD predictions into temporally smoothed, tracked obstacle
  * objects with zone hysteresis, proximity severity, approach trend, traffic light
  * state, and Romanian alert text ready for UI and voice synthesis.
+ *
+ * Implements intelligent threat filtering: filters out background clutter,
+ * distant static objects, and objects moving away — highlighting ONLY objects
+ * you are actively approaching and that pose a collision hazard in your path.
  */
 export function analyzeDetections(
   predictions,
@@ -396,7 +488,18 @@ export function analyzeDetections(
   const matchedPrevIds = new Set();
 
   const currentObstacles = predictions
-    .filter((p) => p.score >= 0.48)
+    .filter((p) => {
+      // 1. Initial confidence filter
+      if (p.score < 0.46) return false;
+
+      // 2. Filter out non-hazard trivial items unless very large in foreground
+      const isKnownHazard = HAZARDOUS_OBSTACLE_CLASSES.has(p.class);
+      if (!isKnownHazard) {
+        const heightRatio = p.bbox[3] / frameHeight;
+        if (heightRatio < 0.35) return false;
+      }
+      return true;
+    })
     .map((p, index) => {
       const [rawX, rawY, rawW, rawH] = p.bbox;
       const rawCenterX = rawX + rawW / 2;
@@ -428,50 +531,6 @@ export function analyzeDetections(
 
       const areaGrowthRate =
         prev && prev.area > 0 ? (area - prev.area) / prev.area : 0;
-      const isGrowing = areaGrowthRate > 0.05;
-
-      // Hysteresis on severity to prevent rapid danger <-> approaching <-> far flicker
-      let severity = 'far';
-      if (prev?.severity === 'danger') {
-        const stillDanger =
-          heightRatio >= 0.36 ||
-          areaRatio >= 0.14 ||
-          (inCenterPath && (heightRatio >= 0.34 || areaRatio >= 0.12));
-        if (stillDanger) {
-          severity = 'danger';
-        } else if (heightRatio >= 0.20 || areaRatio >= 0.06) {
-          severity = 'approaching';
-        }
-      } else if (prev?.severity === 'approaching') {
-        const escalateDanger =
-          heightRatio >= 0.55 ||
-          areaRatio >= 0.24 ||
-          (inCenterPath && (heightRatio >= 0.42 || areaRatio >= 0.16));
-        const stillApproaching =
-          heightRatio >= 0.18 ||
-          areaRatio >= 0.06 ||
-          (inCenterPath && heightRatio >= 0.16);
-        if (escalateDanger) {
-          severity = 'danger';
-        } else if (stillApproaching) {
-          severity = 'approaching';
-        }
-      } else {
-        if (
-          heightRatio >= 0.55 ||
-          areaRatio >= 0.24 ||
-          (inCenterPath && (heightRatio >= 0.42 || areaRatio >= 0.16))
-        ) {
-          severity = 'danger';
-        } else if (
-          heightRatio >= 0.28 ||
-          areaRatio >= 0.09 ||
-          (inCenterPath && heightRatio >= 0.22) ||
-          (isGrowing && heightRatio >= 0.16)
-        ) {
-          severity = 'approaching';
-        }
-      }
 
       const labelRo = OBSTACLE_LABELS_RO[p.class] || p.class;
       const rawDistance = estimateDistanceMeters(heightRatio);
@@ -483,6 +542,29 @@ export function analyzeDetections(
           ? Math.round(smoothedDistance * 5) / 5
           : Math.round(smoothedDistance * 2) / 2;
       const zoneRo = ZONE_LABELS_RO[zone];
+
+      // ─── Dynamic Approach & Threat Assessment ─────────────────────────────
+      // Track whether the user is approaching the obstacle (or obstacle is approaching user)
+      const prevDist = prev ? (prev.rawDistance ?? prev.distanceMeters) : null;
+      const distDelta = prevDist != null ? prevDist - smoothedDistance : 0; // > 0 means getting closer
+      const isDistanceClosing = distDelta > 0.05; // >= 5cm closing
+      const isDistanceOpening = distDelta < -0.12; // moving away
+      const isGrowingArea = areaGrowthRate > 0.04;
+      const isShrinkingArea = areaGrowthRate < -0.06;
+
+      // An object is "approaching" if distance is closing, area is expanding, or within collision range
+      const isApproaching =
+        isDistanceClosing ||
+        isGrowingArea ||
+        (smoothedDistance <= 2.2 && !isDistanceOpening);
+
+      // An object is receding if distance is increasing AND area is shrinking
+      const isReceding = isDistanceOpening && isShrinkingArea;
+
+      // Check lateral movement towards user's central walking trajectory
+      const isCentering = prev
+        ? Math.abs(centerX - frameWidth / 2) < Math.abs(prev.centerX - frameWidth / 2) - 8
+        : false;
 
       let trafficLightState = null;
       let trafficLightHold = 0;
@@ -504,24 +586,74 @@ export function analyzeDetections(
         }
       }
 
+      // Evaluate Pericol / Threat flag: ONLY take objects that pose a real danger
+      // and that the user is approaching or in direct collision path.
+      let isThreat = false;
+      let threatReason = '';
+      let severity = 'far';
+
+      if (p.class === 'traffic light') {
+        if (trafficLightState === 'red') {
+          isThreat = true;
+          threatReason = 'Semafor roșu';
+          severity = 'danger';
+        } else if (trafficLightState === 'yellow') {
+          isThreat = true;
+          threatReason = 'Semafor galben';
+          severity = 'approaching';
+        } else if (trafficLightState === 'green') {
+          // Green light is safe to pass, not a hazard
+          isThreat = false;
+          severity = 'far';
+        }
+      } else if (HAZARDOUS_OBSTACLE_CLASSES.has(p.class)) {
+        if (inCenterPath) {
+          if (smoothedDistance <= 2.2) {
+            // Immediate collision hazard in forward path
+            isThreat = true;
+            threatReason = isApproaching ? 'Te apropii rapid' : 'În calea ta';
+            severity = 'danger';
+          } else if (smoothedDistance <= 5.2 && isApproaching && !isReceding) {
+            // Approaching obstacle in forward path
+            isThreat = true;
+            threatReason = 'Te apropii';
+            severity = smoothedDistance <= 3.2 ? 'danger' : 'approaching';
+          }
+        } else {
+          // In side corridors (left / right):
+          if (smoothedDistance <= 1.6 && isApproaching && !isReceding) {
+            // Close lateral obstacle user might clip with shoulder or wheel
+            isThreat = true;
+            threatReason = 'Obstacol lateral apropiat';
+            severity = 'approaching';
+          } else if (isCentering && isApproaching && smoothedDistance <= 4.0) {
+            // Crossing into user's path (e.g. crossing pedestrian, bike, car)
+            isThreat = true;
+            threatReason = 'Se îndreaptă spre calea ta';
+            severity = 'approaching';
+          }
+        }
+      } else if (inCenterPath && smoothedDistance <= 1.5 && isApproaching) {
+        // Ground tripping hazard right in front of feet
+        isThreat = true;
+        threatReason = 'Obstacol la sol în cale';
+        severity = 'approaching';
+      }
+
+      // Alert message in Romanian
       let messageRo = `${labelRo} ${zoneRo} (~${distanceMeters}m)`;
       if (p.class === 'traffic light') {
         if (trafficLightState === 'red') {
           messageRo = `Semafor ROȘU ${zoneRo} — oprește!`;
-          severity = 'danger';
-        } else if (trafficLightState === 'green') {
-          messageRo = `Semafor VERDE ${zoneRo} — poți traversa`;
-          if (severity === 'far') severity = 'approaching';
         } else if (trafficLightState === 'yellow') {
           messageRo = `Semafor GALBEN ${zoneRo} — atenție`;
-          if (severity === 'far') severity = 'approaching';
-        } else {
-          messageRo = `Semafor detectat ${zoneRo}`;
+        } else if (trafficLightState === 'green') {
+          messageRo = `Semafor VERDE ${zoneRo} — poți traversa`;
         }
       } else if (severity === 'danger') {
-        messageRo = `Pericol! ${labelRo} foarte aproape ${zoneRo} (~${distanceMeters}m)`;
+        messageRo = `Pericol! ${labelRo} foarte aproape ${zoneRo} (~${distanceMeters}m) — ${threatReason || 'atenție'}`;
       } else if (severity === 'approaching') {
-        messageRo = `Atenție, te apropii de ${labelRo.toLowerCase()} ${zoneRo} (~${distanceMeters}m)`;
+        messageRo = `Atenție, ${threatReason.toLowerCase() || 'te apropii de'} ${labelRo.toLowerCase()} ${zoneRo} (~${distanceMeters}m)`;
       }
 
       const framesSeen = (prev?.framesSeen || 0) + 1;
@@ -540,7 +672,11 @@ export function analyzeDetections(
         areaRatio,
         heightRatio,
         areaGrowthRate,
-        isGrowing,
+        isGrowing: isGrowingArea,
+        isApproaching,
+        isReceding,
+        isThreat,
+        threatReason,
         zone,
         zoneRo,
         inCenterPath,
@@ -568,6 +704,8 @@ export function analyzeDetections(
     }));
 
   return [...currentObstacles, ...coasted].sort((a, b) => {
+    // Sort threats first, then by severity and size
+    if (b.isThreat !== a.isThreat) return b.isThreat ? 1 : -1;
     const rank = { danger: 3, approaching: 2, far: 1 };
     if (rank[b.severity] !== rank[a.severity]) {
       return rank[b.severity] - rank[a.severity];
