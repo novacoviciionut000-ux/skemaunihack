@@ -1,27 +1,16 @@
 /**
- * Centralized Priority Speech Queue for AccessMap
+ * Centralized Speech Queue & Audio Alarm System for AccessMap
  *
- * Features:
- * - Priority-based: danger > urgent > high > normal
- *   Items with higher danger rating are spoken FIRST (sorted on each insertion)
- * - TTL: items older than 10 seconds are dropped before processing
- * - No setTimeout for speak() — uses utterance.onend chain (mobile-safe)
- * - Browser's speechSynthesis processes one utterance at a time; we manage order ourselves
- * - Alarm beep (Web Audio) plays concurrently with TTS — does NOT go through the queue
+ * Rules:
+ * - NO custom FIFO with async isSpeaking locks (breaks on mobile browsers)
+ * - Priority: 'danger' and 'urgent' instantly cancel any lower-priority speech and speak immediately
+ * - Direct speak() execution — browser manages native speech buffer without gesture drops
+ * - Retains active utterance reference on window to prevent mobile Garbage Collection mute bug
+ * - Concurrent Web Audio beeps (alarm & tilt) that run independently of TTS
  */
 
-// Priority levels → numeric weight (higher = spoken sooner)
-const PRIORITY_WEIGHT = {
-  danger: 4,
-  urgent: 3,
-  high: 2,
-  normal: 1,
-};
-
-const TTL_MS = 4_000; // Drop queue items older than 4 seconds
-
 // ---------------------------------------------------------------------------
-// Alarm / beep tones (Web Audio) — separate from TTS, plays in parallel
+// Concurrent Web Audio Tones (Alarm beep for blocked road & Tilt tone)
 // ---------------------------------------------------------------------------
 let _alarmCtx = null;
 
@@ -35,8 +24,8 @@ function _getAudioCtx() {
 }
 
 /**
- * Play an urgent alarm beep (3 fast descending pulses).
- * Used when path/sidewalk is blocked — plays concurrently with TTS.
+ * Play urgent alarm beep (3 fast descending tones).
+ * Triggers when road is completely blocked — runs concurrently with TTS.
  */
 export function playAlarmBeep() {
   const ctx = _getAudioCtx();
@@ -44,26 +33,24 @@ export function playAlarmBeep() {
   try {
     if (ctx.state === 'suspended') ctx.resume();
     const now = ctx.currentTime;
-    // Three rapid pulses: 880 Hz → 660 Hz → 440 Hz
     [880, 660, 440].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(freq, now + i * 0.18);
-      gain.gain.setValueAtTime(0.001, now + i * 0.18);
-      gain.gain.exponentialRampToValueAtTime(0.28, now + i * 0.18 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.18 + 0.14);
+      osc.frequency.setValueAtTime(freq, now + i * 0.16);
+      gain.gain.setValueAtTime(0.001, now + i * 0.16);
+      gain.gain.exponentialRampToValueAtTime(0.25, now + i * 0.16 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.16 + 0.13);
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.start(now + i * 0.18);
-      osc.stop(now + i * 0.18 + 0.15);
+      osc.start(now + i * 0.16);
+      osc.stop(now + i * 0.16 + 0.14);
     });
   } catch {}
 }
 
 /**
- * Play a gentle orientation feedback tone (tilt warning).
- * Two soft sine pulses.
+ * Play subtle tilt feedback tone (2 soft pulses).
  */
 export function playTiltBeep() {
   const ctx = _getAudioCtx();
@@ -75,21 +62,18 @@ export function playTiltBeep() {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, now + i * 0.14);
-      gain.gain.setValueAtTime(0.001, now + i * 0.14);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + i * 0.14 + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.14 + 0.095);
+      osc.frequency.setValueAtTime(freq, now + i * 0.12);
+      gain.gain.setValueAtTime(0.001, now + i * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + i * 0.12 + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.12 + 0.09);
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.start(now + i * 0.14);
-      osc.stop(now + i * 0.14 + 0.1);
+      osc.start(now + i * 0.12);
+      osc.stop(now + i * 0.12 + 0.095);
     });
   } catch {}
 }
 
-/**
- * Unlock AudioContext on first user gesture — call from touchstart/click handler.
- */
 export function unlockAudioContext() {
   const ctx = _getAudioCtx();
   if (ctx && ctx.state === 'suspended') {
@@ -98,17 +82,16 @@ export function unlockAudioContext() {
 }
 
 // ---------------------------------------------------------------------------
-// SpeechQueueManager
+// Speech Synthesis Manager
 // ---------------------------------------------------------------------------
 
 class SpeechQueueManager {
   constructor() {
-    /** @type {Array<{text:string, priority:string, weight:number, lang:string, rate:number, pitch:number, addedAt:number}>} */
-    this.queue = [];
-    this.isSpeaking = false;
     this.voiceEnabled = true;
     this.voices = [];
-    this._unlocked = false;
+    this._lastText = '';
+    this._lastTime = 0;
+    this._currentPriority = 'normal';
 
     if (typeof window !== 'undefined') {
       this._init();
@@ -121,31 +104,38 @@ class SpeechQueueManager {
       window.speechSynthesis.onvoiceschanged = () => this._loadVoices();
     }
 
-    // Unlock on first gesture — synchronous in event handler
-    const unlockOnce = () => {
-      if (this._unlocked) return;
-      this._unlocked = true;
+    const unlockHandler = () => {
       this.unlock();
       unlockAudioContext();
     };
-    ['touchstart', 'click', 'keydown'].forEach((evt) => {
-      window.addEventListener(evt, unlockOnce, { capture: true, passive: true });
+    ['touchstart', 'touchend', 'click'].forEach((evt) => {
+      window.addEventListener(evt, unlockHandler, { capture: true, passive: true });
     });
   }
 
   _loadVoices() {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    try { this.voices = window.speechSynthesis.getVoices() || []; } catch { this.voices = []; }
+    try {
+      this.voices = window.speechSynthesis.getVoices() || [];
+    } catch {
+      this.voices = [];
+    }
   }
 
   getRomanianVoice() {
-    if (!this.voices.length) this._loadVoices();
+    if (!this.voices || this.voices.length === 0) {
+      this._loadVoices();
+    }
+    const voices = this.voices;
+    if (!voices || voices.length === 0) return null;
+
     return (
-      this.voices.find((v) =>
-        v.lang &&
-        (v.lang.toLowerCase() === 'ro-ro' ||
-          v.lang.toLowerCase() === 'ro_ro' ||
-          v.lang.toLowerCase().startsWith('ro'))
+      voices.find(
+        (v) =>
+          v.lang &&
+          (v.lang.toLowerCase() === 'ro-ro' ||
+            v.lang.toLowerCase() === 'ro_ro' ||
+            v.lang.toLowerCase().startsWith('ro'))
       ) || null
     );
   }
@@ -153,37 +143,32 @@ class SpeechQueueManager {
   unlock() {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
-      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-      // Silent utterance to open audio channel on iOS/Android
-      const silent = new SpeechSynthesisUtterance('\u200B');
-      silent.volume = 0;
-      silent.rate = 10;
-      silent.lang = 'ro-RO';
-      window.speechSynthesis.speak(silent);
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
     } catch {}
   }
 
   setVoiceEnabled(enabled) {
     this.voiceEnabled = Boolean(enabled);
-    if (!this.voiceEnabled) this.cancel();
+    if (!this.voiceEnabled) {
+      this.cancel();
+    }
   }
 
-  getVoiceEnabled() { return this.voiceEnabled; }
+  getVoiceEnabled() {
+    return this.voiceEnabled;
+  }
 
   /**
-   * Add text to the priority queue.
-   *
-   * @param {string} text
-   * @param {object} [options]
-   *   - priority: 'danger' | 'urgent' | 'high' | 'normal'  (default: 'normal')
-   *   - interrupt: boolean — cancel everything and speak immediately
-   *   - rate: number (default 1.0)
-   *   - pitch: number (default 1.0)
-   *   - lang: string (default 'ro-RO')
+   * Speak text with priority handling.
+   * - 'danger' / 'urgent': cuts through immediately (cancels active speech and talks right now)
+   * - 'high' / 'normal': queued cleanly by browser without stalling
    */
   speak(text, options = {}) {
-    if (!this.voiceEnabled) return;
-    if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    if (!this.voiceEnabled || !text || typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      return;
+    }
 
     const trimmed = String(text).trim();
     if (!trimmed) return;
@@ -193,119 +178,75 @@ class SpeechQueueManager {
       pitch = 1.0,
       lang = 'ro-RO',
       interrupt = false,
-      priority = 'normal',
+      priority = 'normal', // 'danger' | 'urgent' | 'high' | 'normal'
     } = options;
 
-    const weight = PRIORITY_WEIGHT[priority] ?? PRIORITY_WEIGHT.normal;
+    const isHighPriority = priority === 'danger' || priority === 'urgent' || interrupt;
+    const now = Date.now();
 
-    if (interrupt) {
-      this.cancel();
-      this._enqueue({ text: trimmed, priority, weight, lang, rate, pitch });
-      this._processQueue();
+    // Deduplication: don't repeat the exact same sentence within 2.5 seconds unless it's danger
+    if (!isHighPriority && trimmed === this._lastText && now - this._lastTime < 2500) {
       return;
     }
 
-    // Deduplication: skip if same text already in queue or currently speaking
-    if (this.queue.some((item) => item.text === trimmed)) return;
-
-    // Drop low-priority items when queue is full (keep up to 3 items max)
-    if (this.queue.length >= 3) {
-      // Remove lowest-priority non-danger item
-      const lowestIdx = this._findLowestIndex();
-      if (lowestIdx !== -1 && this.queue[lowestIdx].weight < weight) {
-        this.queue.splice(lowestIdx, 1);
-      } else {
-        return; // Queue full with higher priority items — skip this one
-      }
+    // High priority cuts off whatever was speaking before
+    if (isHighPriority) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
     }
 
-    this._enqueue({ text: trimmed, priority, weight, lang, rate, pitch });
-
-    if (!this.isSpeaking) {
-      this._processQueue();
-    }
-  }
-
-  _enqueue(item) {
-    item.addedAt = Date.now();
-    this.queue.push(item);
-    // Sort by weight descending so highest priority is at index 0
-    this.queue.sort((a, b) => b.weight - a.weight);
-  }
-
-  _findLowestIndex() {
-    if (!this.queue.length) return -1;
-    let idx = 0;
-    for (let i = 1; i < this.queue.length; i++) {
-      if (this.queue[i].weight < this.queue[idx].weight) idx = i;
-    }
-    return idx;
-  }
-
-  /** Drop items older than TTL_MS */
-  _pruneExpired() {
-    const cutoff = Date.now() - TTL_MS;
-    this.queue = this.queue.filter((item) => item.addedAt >= cutoff);
-  }
-
-  _processQueue() {
-    this._pruneExpired();
-
-    if (this.queue.length === 0) {
-      this.isSpeaking = false;
-      return;
-    }
-
-    this.isSpeaking = true;
-    const item = this.queue.shift();
-
-    // Resume if paused
-    try {
-      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-    } catch {}
-
-    const utterance = new SpeechSynthesisUtterance(item.text);
-    utterance.lang = item.lang || 'ro-RO';
-    utterance.rate = item.rate || 1.0;
-    utterance.pitch = item.pitch || 1.0;
-
-    if (!this.voices.length) this._loadVoices();
-    const roVoice = this.getRomanianVoice();
-    if (roVoice) utterance.voice = roVoice;
-
-    // Chain: when this utterance ends, process the next one directly (no setTimeout)
-    utterance.onend = () => {
-      this.isSpeaking = false;
-      this._processQueue();
-    };
-    utterance.onerror = (e) => {
-      if (e.error !== 'interrupted' && e.error !== 'canceled') {
-        console.warn('[SpeechQueue] error:', e.error, '—', item.text.slice(0, 40));
-      }
-      this.isSpeaking = false;
-      this._processQueue();
-    };
+    this._lastText = trimmed;
+    this._lastTime = now;
+    this._currentPriority = priority;
 
     try {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+
+      const utterance = new SpeechSynthesisUtterance(trimmed);
+      utterance.lang = lang;
+      utterance.rate = rate;
+      utterance.pitch = pitch;
+
+      if (!this.voices.length) this._loadVoices();
+      const roVoice = this.getRomanianVoice();
+      if (roVoice) {
+        utterance.voice = roVoice;
+      }
+
+      // CRITICAL FOR MOBILE SAFARI & CHROME: Keep global reference so GC doesn't kill utterance
+      window.__accessmap_active_utterance = utterance;
+
+      utterance.onend = () => {
+        window.__accessmap_active_utterance = null;
+      };
+      utterance.onerror = (e) => {
+        window.__accessmap_active_utterance = null;
+        if (e.error !== 'interrupted' && e.error !== 'canceled') {
+          console.warn('[SpeechQueue] utterance error:', e.error);
+        }
+      };
+
       window.speechSynthesis.speak(utterance);
     } catch (err) {
-      console.warn('[SpeechQueue] speak() threw:', err);
-      this.isSpeaking = false;
-      this._processQueue();
+      console.warn('[SpeechQueue] speak() failed:', err);
     }
   }
 
   cancel() {
-    this.queue = [];
-    this.isSpeaking = false;
-    try {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
+    this._lastText = '';
+    if (typeof window !== 'undefined') {
+      window.__accessmap_active_utterance = null;
+      if ('speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {}
       }
-    } catch {}
+    }
   }
 
-  // Stub — backward compat
   playBeep() {}
 }
 
