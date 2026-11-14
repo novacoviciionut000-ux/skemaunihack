@@ -226,24 +226,25 @@ export function getLiveGuidanceStatus({
   remainingDist = Math.round(remainingDist);
   const remainingSeconds = Math.max(1, Math.round(remainingDist / speedMps));
 
-  // Determine spoken voice prompt based on proximity to maneuver
+  // Determine spoken voice prompt based on proximity to maneuver (concise & clear)
   let voicePrompt = null;
   let isImminent = false;
+  const targetManeuver = (activeStep.shortRo || activeStep.instructionRo).toLowerCase();
 
   if (isOffRoute) {
-    voicePrompt = 'Atenție, ai deviat de la traseu! Reorientează-te spre trotuar.';
+    voicePrompt = 'Deviat de la traseu.';
   } else if (activeStep.maneuver === 'arrive' && distToManeuver <= 15) {
-    voicePrompt = 'Ai sosit la destinație!';
+    voicePrompt = 'Ai sosit la destinație.';
     isImminent = true;
   } else if (distToManeuver <= 15) {
-    voicePrompt = `Acum, ${activeStep.instructionRo.toLowerCase()}`;
+    voicePrompt = `Acum, ${targetManeuver}.`;
     isImminent = true;
   } else if (distToManeuver <= 40) {
-    voicePrompt = `În ${distToManeuver} metri, ${activeStep.instructionRo.toLowerCase()}`;
+    voicePrompt = `În ${distToManeuver} metri, ${targetManeuver}.`;
   } else if (distToManeuver <= 85) {
-    voicePrompt = `Peste ${distToManeuver} metri, ${activeStep.instructionRo.toLowerCase()}`;
+    voicePrompt = `Peste ${distToManeuver} metri, ${targetManeuver}.`;
   } else {
-    voicePrompt = `${activeStep.instructionRo}, continuă ${distToManeuver} metri`;
+    voicePrompt = `${activeStep.shortRo || activeStep.instructionRo}, ${distToManeuver} metri.`;
   }
 
   return {

@@ -28,7 +28,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { getManeuverIcon } from './NavigationGuidance';
-import { speechQueue } from '../utils/speechQueue';
+import { speechQueue, playAlarmBeep, playTiltBeep, unlockAudioContext } from '../utils/speechQueue';
 import {
   loadObstacleModel,
   captureFrameSample,
@@ -52,38 +52,19 @@ const INFERENCE_INTERVAL_MS = 180;
 const ALERT_COOLDOWN_MS = 3000;
 const TILT_VIBRATE_COOLDOWN_MS = 2500;
 const SIDEWALK_EVENT_COOLDOWN_MS = 3500;
-const TILT_UP_ENTER_DEG = 92; // >92 deg means phone is tilted too far upward (sky)
-const TILT_UP_EXIT_DEG = 85;
-const TILT_DOWN_ENTER_DEG = 18; // <18 deg means phone is pointing straight down at feet
-const TILT_DOWN_EXIT_DEG = 24;
-const TILT_ROLL_ENTER_DEG = 40; // |gamma| > 40 deg means phone is tilted sideways
+// Tilt thresholds (phone held in portrait, screen facing user, pointing camera forward/down at sidewalk)
+// beta = angle from horizontal: 0° = flat on table, 90° = perfectly vertical
+// Normal walking camera angle: 50°–80° (pointing at ground 1-2m ahead)
+// "Too up" = phone nearly vertical or beyond (pointing at faces/sky): beta > 100°
+// "Too down" = phone nearly flat pointing straight down at feet: beta < 25°
+// "Roll" = sideways tilt: |gamma| > 40°
+const TILT_UP_ENTER_DEG = 100;
+const TILT_UP_EXIT_DEG = 92;
+const TILT_DOWN_ENTER_DEG = 25;
+const TILT_DOWN_EXIT_DEG = 32;
+const TILT_ROLL_ENTER_DEG = 40;
 const TILT_ROLL_EXIT_DEG = 32;
 
-function playTiltFeedbackTone(audioCtx) {
-  if (!audioCtx) return;
-  try {
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-    const now = audioCtx.currentTime;
-    // Two short gentle low-mid pulses (works on iPhone where navigator.vibrate is unsupported)
-    [0, 0.14].forEach((offset, idx) => {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(idx === 0 ? 300 : 240, now + offset);
-      gain.gain.setValueAtTime(0.001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.095);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(now + offset);
-      osc.stop(now + offset + 0.1);
-    });
-  } catch {
-    // Ignore audio errors if blocked
-  }
-}
 
 export default function CameraObstacleDetector({
   isOpen,
@@ -118,7 +99,6 @@ export default function CameraObstacleDetector({
   const lastTiltVibrateRef = useRef(0);
   const lastTiltSpokenRef = useRef({ reason: null, time: 0 });
   const tiltSmoothedRef = useRef({ beta: null, gamma: null, activeReason: null });
-  const audioCtxRef = useRef(null);
   const lastSidewalkEventRef = useRef({ status: '', time: 0 });
   const hadActiveAlertRef = useRef(false);
   const isStartingRef = useRef(false);
@@ -145,6 +125,8 @@ export default function CameraObstacleDetector({
   const [sidewalkStatus, setSidewalkStatus] = useState(null);
   const [tiltWarning, setTiltWarning] = useState(false);
   const [tiltMessage, setTiltMessage] = useState('');
+  const [debugBeta, setDebugBeta] = useState(null);
+  const [debugGamma, setDebugGamma] = useState(null);
   const [isRecordingDetour, setIsRecordingDetour] = useState(false);
   const [detourToast, setDetourToast] = useState('');
   const [isSimulatedMode, setIsSimulatedMode] = useState(false);
@@ -179,12 +161,24 @@ export default function CameraObstacleDetector({
     setTiltMessage('');
   }, []);
 
-  // Phone tilt detection (DeviceOrientationEvent) + vibration / iOS audio pulse
+  // Phone tilt detection (DeviceOrientationEvent) + vibration + mobile audio feedback
   useEffect(() => {
-    if (!isOpen || !cameraActive) {
+    if (!isOpen) {
       setTiltWarning(false);
       setTiltMessage('');
       return;
+    }
+
+    // Ensure audio is unlocked on mobile
+    speechQueue.unlock();
+    unlockAudioContext();
+
+    // Request iOS orientation permission on user gesture if available
+    if (
+      typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function'
+    ) {
+      DeviceOrientationEvent.requestPermission().catch(() => {});
     }
 
     const handleOrientation = (event) => {
@@ -219,16 +213,18 @@ export default function CameraObstacleDetector({
       state.activeReason = reason;
       const isTilted = Boolean(reason);
       setTiltWarning(isTilted);
+      setDebugBeta(Math.round(beta));
+      setDebugGamma(Math.round(state.gamma));
 
       const now = Date.now();
 
       if (isTilted) {
         const msg =
           reason === 'up'
-            ? 'Telefonul e înclinat prea în sus! Coboară-l ușor spre trotuar.'
+            ? 'Coboară telefonul.'
             : reason === 'down'
-              ? 'Telefonul e înclinat prea în jos! Ridică-l ușor spre înainte.'
-              : 'Telefonul e înclinat într-o parte! Ține-l drept spre trotuar.';
+              ? 'Ridică telefonul.'
+              : 'Ține telefonul drept.';
         setTiltMessage(msg);
 
         if (now - lastTiltVibrateRef.current >= TILT_VIBRATE_COOLDOWN_MS) {
@@ -236,8 +232,7 @@ export default function CameraObstacleDetector({
           if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
             navigator.vibrate([200, 90, 200]);
           }
-          // iPhone/iOS Safari does not support navigator.vibrate, so play subtle audio pulse
-          playTiltFeedbackTone(audioCtxRef.current);
+          playTiltBeep();
           emitTiltWarningEvent({
             beta: Math.round(beta),
             gamma: Math.round(state.gamma),
@@ -249,7 +244,7 @@ export default function CameraObstacleDetector({
 
         // Avertizare vocală audio (TTS) secvențială prin coada unificată
         const isNewTiltReason = lastTiltSpokenRef.current.reason !== reason;
-        const isTiltVoiceCooldownElapsed = now - lastTiltSpokenRef.current.time >= 4000;
+        const isTiltVoiceCooldownElapsed = now - lastTiltSpokenRef.current.time >= 3500;
         if ((isNewTiltReason || isTiltVoiceCooldownElapsed) && voiceEnabled !== false) {
           lastTiltSpokenRef.current = { reason, time: now };
           speechQueue.speak(msg, { priority: 'normal' });
@@ -259,14 +254,18 @@ export default function CameraObstacleDetector({
         // Dacă telefonul a fost înclinat și utilizatorul l-a readus în poziție corectă, oferim confirmare audio
         if (lastTiltSpokenRef.current.reason) {
           lastTiltSpokenRef.current = { reason: null, time: now };
-          speechQueue.speak('Poziție corectă a telefonului.', { priority: 'normal' });
+          speechQueue.speak('Poziție corectă.', { priority: 'normal' });
         }
       }
     };
 
     window.addEventListener('deviceorientation', handleOrientation);
-    return () => window.removeEventListener('deviceorientation', handleOrientation);
-  }, [isOpen, cameraActive, voiceEnabled]);
+    window.addEventListener('deviceorientationabsolute', handleOrientation);
+    return () => {
+      window.removeEventListener('deviceorientation', handleOrientation);
+      window.removeEventListener('deviceorientationabsolute', handleOrientation);
+    };
+  }, [isOpen, voiceEnabled]);
 
   // Track userLocation while recording a detour around an obstacle
   useEffect(() => {
@@ -547,12 +546,18 @@ export default function CameraObstacleDetector({
             lastSidewalkEventRef.current = { action: sidewalk.action, time: now };
             emitSidewalkStatusEvent({ ...sidewalk, timestamp: now });
 
-            // Audible warning and safe direction correction for visually impaired user
+            // Alarm beep when path is blocked/unknown — plays concurrently with TTS
+            if (sidewalk.action === 'stop' || sidewalk.action === 'unknown') {
+              playAlarmBeep();
+            }
+
+            // TTS correction — priority based on severity
             if (voiceEnabled !== false) {
-              speechQueue.speak(sidewalk.correctionRo, { priority: 'urgent' });
+              const swPriority = sidewalk.action === 'stop' ? 'danger' : 'urgent';
+              speechQueue.speak(sidewalk.correctionRo, { priority: swPriority });
             }
             if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-              navigator.vibrate([220, 90, 220]);
+              navigator.vibrate(sidewalk.action === 'stop' ? [300, 100, 300, 100, 300] : [220, 90, 220]);
             }
           }
 
@@ -603,9 +608,14 @@ export default function CameraObstacleDetector({
               emitObstacleAlertEvent(payload);
               if (onObstacleAlert) onObstacleAlert(payload);
 
-              // Avertizare vocală audio secvențială pentru obstacole și semafoare
+              // Avertizare vocală — prioritate bazată pe severitate
               if (!needsSidewalkWarning && voiceEnabled !== false) {
-                speechQueue.speak(primaryThreat.messageRo, { priority: 'high' });
+                const obsPriority = primaryThreat.severity === 'danger' ? 'danger' : 'high';
+                // Alarm beep concurent cu TTS pentru pericol iminent
+                if (primaryThreat.severity === 'danger') {
+                  playAlarmBeep();
+                }
+                speechQueue.speak(primaryThreat.messageRo, { priority: obsPriority });
               }
             }
           } else {
@@ -635,20 +645,8 @@ export default function CameraObstacleDetector({
       isStartingRef.current = true;
       setError(null);
 
-      // Unlock Web Audio on user gesture (used for iPhone tilt feedback since iOS lacks navigator.vibrate)
-      if (!audioCtxRef.current && typeof window !== 'undefined') {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-          try {
-            audioCtxRef.current = new AudioCtx();
-          } catch {
-            // Non-fatal
-          }
-        }
-      }
-      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-        audioCtxRef.current.resume().catch(() => {});
-      }
+      // Unlock Web Audio on user gesture (used for alarm beeps — shared AudioContext from speechQueue)
+      unlockAudioContext();
 
       // Request iOS 13+ DeviceOrientation permission on user gesture if needed
       if (
@@ -753,7 +751,7 @@ export default function CameraObstacleDetector({
       drawOverlay([], sidewalk, 640, 480);
     }, 80);
     if (voiceEnabled !== false) {
-      speechQueue.speak('Mod Asistență Virtuală activat. Ghidarea audio pe traseu continuă.', { priority: 'normal' });
+      speechQueue.speak('Mod Asistent Virtual activ.', { priority: 'normal' });
     }
   }, [drawOverlay, voiceEnabled]);
 
@@ -1121,28 +1119,55 @@ export default function CameraObstacleDetector({
         )}
 
         {/* Phone tilt warning banner */}
-        {cameraActive && tiltWarning && (
+        {tiltWarning && (
           <div
             role="alert"
             style={{
               position: 'absolute',
-              top: 10,
-              left: 10,
-              right: 10,
-              padding: '8px 12px',
-              borderRadius: 10,
-              background: 'rgba(185, 28, 28, 0.94)',
+              top: 12,
+              left: 12,
+              right: 12,
+              zIndex: 1400,
+              padding: '10px 14px',
+              borderRadius: 12,
+              background: 'rgba(220, 38, 38, 0.96)',
               color: '#ffffff',
-              fontSize: 12.5,
-              fontWeight: 700,
+              fontSize: 13,
+              fontWeight: 800,
               display: 'flex',
               alignItems: 'center',
-              gap: 8,
-              boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+              gap: 10,
+              boxShadow: '0 6px 20px rgba(220, 38, 38, 0.5)',
+              border: '2px solid #ffffff',
+              animation: 'pulse 1.2s infinite',
             }}
           >
-            <Smartphone size={16} style={{ flexShrink: 0 }} />
-            <span>{tiltMessage || 'Telefonul e înclinat prea în sus! Coboară-l spre trotuar.'}</span>
+            <Smartphone size={18} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1, lineHeight: 1.3 }}>{tiltMessage || 'Telefonul e înclinat prea în sus! Coboară-l spre trotuar.'}</span>
+          </div>
+        )}
+
+        {/* DEBUG overlay — afișează valorile beta/gamma în timp real */}
+        {isOpen && debugBeta !== null && (
+          <div
+            style={{
+              position: 'absolute',
+              top: tiltWarning ? 76 : 12,
+              right: 12,
+              zIndex: 1500,
+              padding: '5px 10px',
+              borderRadius: 8,
+              background: 'rgba(0,0,0,0.72)',
+              color: '#00ff88',
+              fontSize: 12,
+              fontFamily: 'monospace',
+              fontWeight: 700,
+              lineHeight: 1.5,
+              pointerEvents: 'none',
+            }}
+          >
+            <div>β={debugBeta}°</div>
+            <div>γ={debugGamma}°</div>
           </div>
         )}
 
