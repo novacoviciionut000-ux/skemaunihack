@@ -10,7 +10,8 @@ export default defineConfig({
         proxy: {
             '/api': {
                 target: 'http://localhost:8080', // Spring Boot Backend
-                changeOrigin: true
+                changeOrigin: true,
+                xfwd: true // pass the client IP so backend rate limiting is per user, not per proxy
             }
         }
     }

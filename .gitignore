@@ -5,3 +5,8 @@ accessmap/data/*.jar
 accessmap/logs/
 accessmap/.run/
 *.log
+
+# Local secrets
+.env
+!.env.example
+!accessmap/frontend/.env

@@ -520,6 +520,168 @@ export const geocodeAddress = async (query, userLocation = null) => {
     return list && list.length > 0 ? list[0] : null;
 };
 
+// ==================== VOICE DESTINATION: CLOSEST MATCH ====================
+
+const TIMISOARA_CENTER = { lat: 45.7538, lng: 21.2257 };
+const NEARBY_RADIUS_DEG = 0.15; // ~15 km search box around the user
+const UNREACHABLE_OSM_TYPES = new Set(['construction', 'disused', 'abandoned', 'proposed', 'demolished']);
+const NEARBY_WORDS = /\b(?:cel|cea)\s+mai\s+(?:apropiat[ae]?|aproape)\b|\b(?:nearest|closest|near me|nearby|apropiat[ae]?|de langa mine|langa mine)\b/g;
+
+function levenshtein(a, b) {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+        const curr = [i];
+        for (let j = 1; j <= b.length; j++) {
+            curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        }
+        prev = curr;
+    }
+    return prev[b.length];
+}
+
+/** Token match tolerant of speech-recognition spelling errors ("kaufland" vs "kauflant"). */
+function fuzzyTokenMatch(token, words) {
+    const maxEdits = token.length >= 7 ? 2 : token.length >= 4 ? 1 : 0;
+    return words.some((w) => {
+        if (w === token) return true;
+        if (token.length >= 4 && w.length >= 4 && (w.startsWith(token) || token.startsWith(w))) return true;
+        return maxEdits > 0 && Math.abs(w.length - token.length) <= maxEdits && levenshtein(w, token) <= maxEdits;
+    });
+}
+
+/** Fraction (0..1) of the query's distinctive words found in the candidate's name. */
+function nameMatchScore(queryTokens, candidateText) {
+    if (!queryTokens.length) return 0;
+    const words = normalizeSearchText(candidateText).split(' ').filter(Boolean);
+    const matched = queryTokens.filter((t) => fuzzyTokenMatch(t, words)).length;
+    return matched / queryTokens.length;
+}
+
+function shortPlaceName(name, address) {
+    const street = address ? [address.road, address.house_number].filter(Boolean).join(' ') : '';
+    const area = address ? address.suburb || address.city_district || address.neighbourhood || '' : '';
+    return [name, street || area].filter(Boolean).join(', ');
+}
+
+/**
+ * Finds the place the user most likely means, and among equally good name matches picks the
+ * one CLOSEST to the user. "Kaufland" -> nearest Kaufland store, not just the first result.
+ *
+ * @returns {Promise<{displayName, shortName, lat, lng, distanceMeters} | null>}
+ */
+export const findClosestPlace = async (query, userLocation = null) => {
+    const ref = userLocation && userLocation.lat != null
+        ? { lat: Number(userLocation.lat), lng: Number(userLocation.lng) }
+        : TIMISOARA_CENTER;
+
+    const cleanQ = normalizeSearchText(query).replace(NEARBY_WORDS, ' ').replace(/\s+/g, ' ').trim();
+    if (cleanQ.length < 2) return null;
+
+    const tokens = cleanQ.split(' ').filter((t) => t && !SEARCH_STOPWORDS.has(t));
+    const distinctive = tokens.filter((t) => !GENERIC_PLACE_WORDS.has(t));
+    const queryTokens = distinctive.length ? distinctive : tokens;
+
+    const candidates = [];
+    const add = (c) => {
+        if (!Number.isFinite(c.lat) || !Number.isFinite(c.lng)) return;
+        candidates.push({ ...c, distanceMeters: Math.round(getDistance(ref, c)) });
+    };
+
+    // 1. Built-in landmarks
+    TIMISOARA_LANDMARKS.forEach((lm) => {
+        const score = Math.max(
+            nameMatchScore(queryTokens, lm.displayName),
+            nameMatchScore(queryTokens, (lm.keywords || []).join(' '))
+        );
+        if (score > 0) add({ displayName: lm.displayName, shortName: lm.displayName.split(',')[0], lat: lm.lat, lng: lm.lng, score });
+    });
+
+    // 2. OpenStreetMap: every matching place in a box around the user (all Kaufland stores, etc.)
+    const nominatim = async (bounded) => {
+        const d = NEARBY_RADIUS_DEG;
+        const viewbox = `${ref.lng - d},${ref.lat + d},${ref.lng + d},${ref.lat - d}`;
+        const params = new URLSearchParams({
+            format: 'jsonv2',
+            q: cleanQ,
+            viewbox,
+            bounded: bounded ? '1' : '0',
+            limit: '25',
+            countrycodes: 'ro',
+            addressdetails: '1',
+            namedetails: '1',
+            'accept-language': 'ro',
+        });
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!Array.isArray(data)) return;
+            data.forEach((item) => {
+                // Skip places you can't actually go to (e.g. a Kaufland that is still being built)
+                if (UNREACHABLE_OSM_TYPES.has(item.type)) return;
+                const name = item.name || item.namedetails?.name || item.display_name.split(',')[0];
+                const brand = item.namedetails?.brand || '';
+                const score = Math.max(nameMatchScore(queryTokens, `${name} ${brand}`), 0.5 * nameMatchScore(queryTokens, item.display_name));
+                add({
+                    displayName: item.display_name,
+                    shortName: shortPlaceName(name, item.address),
+                    lat: parseFloat(item.lat),
+                    lng: parseFloat(item.lon),
+                    score,
+                });
+            });
+        } catch {
+            /* offline: other sources still apply */
+        }
+    };
+
+    // 3. Backend (Google Geocoding), useful for street addresses
+    const backend = async () => {
+        try {
+            const r = await request(`/api/geocode/suggest?q=${encodeURIComponent(cleanQ)}&limit=5`);
+            (Array.isArray(r) ? r : []).forEach((item) => {
+                if (!item?.coordinate) return;
+                const name = item.displayName || item.query || '';
+                add({
+                    displayName: name,
+                    shortName: name.split(',').slice(0, 2).join(',').trim(),
+                    lat: Number(item.coordinate.lat),
+                    lng: Number(item.coordinate.lng),
+                    score: nameMatchScore(queryTokens, name),
+                });
+            });
+        } catch {
+            /* backend down */
+        }
+    };
+
+    await Promise.all([nominatim(true), backend()]);
+    if (!candidates.some((c) => c.score >= 0.5)) {
+        await nominatim(false); // nothing nearby: widen to the whole country
+    }
+
+    const good = candidates.filter((c) => c.score >= 0.5);
+    if (!good.length) return null;
+
+    // Best name-match tier first, then the nearest one inside that tier
+    const bestScore = Math.max(...good.map((c) => c.score));
+    const best = good
+        .filter((c) => c.score >= bestScore - 0.01)
+        .sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
+
+    return {
+        displayName: best.displayName,
+        shortName: best.shortName || best.displayName,
+        lat: best.lat,
+        lng: best.lng,
+        distanceMeters: best.distanceMeters,
+        distanceFormatted: formatDistance(best.distanceMeters),
+    };
+};
+
 /** GET /api/v1/route -> { coordinates: [[lat, lng]], distanceMeters, timeSeconds } */
 export const getRoute = async (startCoords, endCoords, profile = 'low_vision') => {
     // 1. Încercăm backend-ul Spring Boot (care apelează GraphHopper local cu profilul dedicat de mobilitate)

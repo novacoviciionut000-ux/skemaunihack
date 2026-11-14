@@ -1,13 +1,17 @@
+# Secrets come from environment variables or a local, git-ignored .env file
+# (accessmap/.env or the repository root). See .env.example.
 supabase:
   url: "https://***REMOVED***.supabase.co"
   key: "***REMOVED***"
 
 spring:
+  config:
+    import: "optional:file:.env[.properties],optional:file:../.env[.properties],optional:file:../../.env[.properties]"
   datasource:
     # 6543 = Supabase transaction pooler (5432 session pooler e limitat la 15 clienti in total)
-    url: "jdbc:postgresql://aws-0-eu-central-1.pooler.supabase.com:6543/postgres?prepareThreshold=0"
-    username: "postgres.***REMOVED***"
-    password: "***REMOVED***"
+    url: "${DB_URL:jdbc:postgresql://aws-0-eu-central-1.pooler.supabase.com:6543/postgres?prepareThreshold=0}"
+    username: "${DB_USERNAME:postgres.***REMOVED***}"
+    password: "${DB_PASSWORD}"
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 3
@@ -22,8 +26,9 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
 jwt:
-  # Secret de cel puțin 256 de biți pentru semnătura HMAC-SHA256
-  secret: "***REMOVED***"
+  # Secret de cel puțin 256 de biți (32+ caractere) pentru HMAC-SHA256.
+  # Dacă lipsește, se generează unul aleator la pornire (token-urile expiră la restart).
+  secret: "${JWT_SECRET:}"
   # Valabilitate token: 24 de ore (în milisecunde)
   expiration-ms: 86400000
 
@@ -48,4 +53,4 @@ mail:
 
 google:
   maps:
-    api-key: ***REMOVED***
+    api-key: "${GOOGLE_MAPS_API_KEY:}"

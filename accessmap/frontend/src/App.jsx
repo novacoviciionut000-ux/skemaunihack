@@ -280,11 +280,11 @@ export default function App() {
       setPlacingMode(null);
       setCenterTarget({ lat: dest.lat, lng: dest.lng, zoom: 15 });
 
-      // Dacă utilizatorul nu a pus manual un punct de plecare, îl luăm automat din GPS
-      if (!start) {
-        if (userLocation) {
-          setStart(userLocation);
-        } else if (navigator.geolocation) {
+      // O comandă vocală ("Du-mă la ...") pornește mereu de la poziția curentă, dacă o știm
+      if (userLocation) {
+        setStart({ lat: userLocation.lat, lng: userLocation.lng });
+      } else if (!start) {
+        if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
             (pos) => {
               const gpsCoords = {
@@ -568,9 +568,11 @@ export default function App() {
         />
       )}
 
-      {/* Butonul de comandă vocală (pe mobil se ascunde când Planificatorul e deschis ca să nu se suprapună) */}
-      {(!isMobile || sidebarCollapsed) && (
+      {/* Butonul de comandă vocală. Rămâne montat mereu (ascultă atingerea dublă oriunde pe ecran);
+          pe mobil doar se ascunde vizual când Planificatorul e deschis. */}
+      {(
         <div style={{
+          display: !isMobile || sidebarCollapsed ? 'block' : 'none',
           position: 'absolute',
           bottom: isMobile ? 36 : 24,
           right: isMobile ? 4 : 24,

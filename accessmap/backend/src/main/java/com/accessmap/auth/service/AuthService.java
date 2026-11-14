@@ -7,6 +7,9 @@ import com.accessmap.auth.model.User;
 import com.accessmap.auth.repository.UserRepository;
 import com.accessmap.auth.security.JwtUtil;
 import com.accessmap.auth.security.RateLimitingService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -16,13 +19,13 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -30,6 +33,16 @@ import java.util.regex.Pattern;
 public class AuthService {
 
     private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[A-Za-z])(?=.*\\d).{8,}$");
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_.-]{3,30}$");
+    private static final String MOCK_GOOGLE_CLIENT_ID = "mock-google-client-id";
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(4))
+            .build();
+
+    @Value("${auth.oauth.google.client-id:}")
+    private String googleClientId;
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -177,8 +190,6 @@ public class AuthService {
      */
     @Transactional
     public AuthResponse oauthLogin(OAuthRequest request, String clientIp) {
-        enrichFromTokenIfPresent(request);
-
         String providerStr = request.getProvider() != null ? request.getProvider().trim().toUpperCase() : "";
         AuthProvider provider;
         try {
@@ -187,14 +198,15 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Furnizor OAuth necunoscut: " + request.getProvider());
         }
 
-        if (provider != AuthProvider.GOOGLE && provider != AuthProvider.FACEBOOK) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Doar Google și Facebook sunt suportate.");
+        // Only Google can be verified server-side. Facebook logins were accepted without any
+        // verification, which let anyone obtain a token for any email address.
+        if (provider != AuthProvider.GOOGLE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Doar autentificarea Google este suportată.");
         }
 
-        // Verificare autenticitate cont Google
-        if (provider == AuthProvider.GOOGLE) {
-            validateGoogleAccount(request);
-        }
+        // Identity (email, sub, name, picture) is taken ONLY from Google's verification response,
+        // never from the request body.
+        verifyGoogleToken(request);
 
         String email = request.getEmail() != null ? request.getEmail().trim().toLowerCase() : null;
         if (!StringUtils.hasText(email)) {
@@ -301,78 +313,83 @@ public class AuthService {
     }
 
     /**
-     * Validează strict dacă un cont Google este autentic și verifică token-ul emis de Google Identity Services.
+     * Verifies a Google ID token (JWT) or access token with Google's tokeninfo endpoint and
+     * overwrites the request identity with the verified values. Fails closed: if Google cannot
+     * confirm the token, was not issued for this app, or the email is unverified, login is refused.
      */
-    private void validateGoogleAccount(OAuthRequest request) {
-        String token = request.getToken();
-        if (!StringUtils.hasText(token)) {
+    private void verifyGoogleToken(OAuthRequest request) {
+        String token = request.getToken() != null ? request.getToken().trim() : "";
+        if (token.isEmpty() || token.length() > 4096) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
-                    "Autentificarea cu Google necesită un token Google valid obținut prin Google Identity Services.");
+                    "Autentificarea cu Google necesită un token Google valid.");
+        }
+        if (!StringUtils.hasText(googleClientId) || MOCK_GOOGLE_CLIENT_ID.equals(googleClientId)) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Autentificarea Google nu este configurată pe server (GOOGLE_CLIENT_ID).");
         }
 
-        // Verificare structură JWT Google ID Token
-        String[] parts = token.split("\\.");
-        if (parts.length >= 2) {
-            try {
-                String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
-                if (payloadJson.contains("\"email_verified\":false")) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Adresa de email asociată acestui cont Google nu este verificată de Google.");
-                }
-                if (!payloadJson.contains("accounts.google.com")) {
-                    throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Tokenul nu a fost emis de Google (issuer invalid).");
-                }
-            } catch (ResponseStatusException rse) {
-                throw rse;
-            } catch (Exception e) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Formatul token-ului Google este invalid.");
-            }
-        }
-
-        // Verificare online cu serverele oficiale Google (tokeninfo)
+        boolean isIdToken = token.chars().filter(c -> c == '.').count() == 2;
+        String param = isIdToken ? "id_token" : "access_token";
+        JsonNode info;
         try {
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofMillis(2500))
-                    .build();
             HttpRequest httpReq = HttpRequest.newBuilder()
-                    .uri(URI.create("https://oauth2.googleapis.com/tokeninfo?id_token=" + token))
-                    .timeout(Duration.ofMillis(2500))
+                    .uri(URI.create("https://oauth2.googleapis.com/tokeninfo?" + param + "="
+                            + URLEncoder.encode(token, StandardCharsets.UTF_8)))
+                    .timeout(Duration.ofSeconds(5))
                     .GET()
                     .build();
-            HttpResponse<String> resp = client.send(httpReq, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() == 200) {
-                String body = resp.body();
-                String verifiedEmail = extractJsonField(body, "email");
-                if (StringUtils.hasText(verifiedEmail)) {
-                    request.setEmail(verifiedEmail);
-                }
-                String verifiedName = extractJsonField(body, "name");
-                if (StringUtils.hasText(verifiedName)) {
-                    request.setName(verifiedName);
-                }
-                String verifiedSub = extractJsonField(body, "sub");
-                if (StringUtils.hasText(verifiedSub)) {
-                    request.setProviderId(verifiedSub);
-                }
-                String verifiedPic = extractJsonField(body, "picture");
-                if (StringUtils.hasText(verifiedPic)) {
-                    request.setAvatarUrl(verifiedPic);
-                }
-            } else if (resp.statusCode() == 400 && resp.body().contains("error")) {
-                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Token-ul Google furnizat nu a putut fi validat de serverele Google (invalid sau expirat).");
+            HttpResponse<String> resp = HTTP.send(httpReq, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                        "Token-ul Google este invalid sau expirat.");
             }
+            info = JSON.readTree(resp.body());
         } catch (ResponseStatusException rse) {
             throw rse;
-        } catch (Exception ignored) {
-            // Fallback dacă mediul nu are acces exterior la Google în dev mode
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Google nu a putut fi contactat.");
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Google nu a putut fi contactat.");
         }
 
-        // Verificare format adresă email Google
-        String email = request.getEmail();
-        if (StringUtils.hasText(email)) {
-            email = email.trim().toLowerCase();
-            if (!email.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Adresa de email '" + email + "' nu este un format valid de email.");
+        // The token must have been issued to OUR client, otherwise a token from any other
+        // Google-enabled site could be replayed here.
+        String aud = info.path("aud").asText("");
+        String azp = info.path("azp").asText("");
+        if (!googleClientId.equals(aud) && !googleClientId.equals(azp)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Token-ul Google nu a fost emis pentru această aplicație.");
+        }
+        if (isIdToken) {
+            String iss = info.path("iss").asText("");
+            if (!"accounts.google.com".equals(iss) && !"https://accounts.google.com".equals(iss)) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Emitent token invalid.");
             }
+        }
+
+        String email = info.path("email").asText("");
+        String sub = info.path("sub").asText("");
+        boolean emailVerified = "true".equalsIgnoreCase(info.path("email_verified").asText(""));
+        if (email.isEmpty() || sub.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "Google nu a furnizat adresa de email (lipsește permisiunea email).");
+        }
+        if (!emailVerified) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "Adresa de email a contului Google nu este verificată.");
+        }
+
+        request.setEmail(email);
+        request.setProviderId(sub);
+        // tokeninfo for access tokens has no name/picture; keep client values only as display data
+        if (info.hasNonNull("name")) request.setName(info.get("name").asText());
+        if (info.hasNonNull("picture")) request.setAvatarUrl(info.get("picture").asText());
+        if (request.getName() != null && request.getName().length() > 100) {
+            request.setName(request.getName().substring(0, 100));
+        }
+        String avatar = request.getAvatarUrl();
+        if (avatar != null && (avatar.length() > 500 || !avatar.startsWith("https://"))) {
+            request.setAvatarUrl(null);
         }
     }
 
@@ -405,6 +422,10 @@ public class AuthService {
         // Modificare username dacă se dorește
         if (StringUtils.hasText(request.getUsername())) {
             String newUsername = request.getUsername().trim().toLowerCase();
+            if (!USERNAME_PATTERN.matcher(newUsername).matches()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Numele de utilizator trebuie să aibă 3-30 caractere: litere, cifre, punct, linie sau underscore.");
+            }
             if (!newUsername.equalsIgnoreCase(user.getUsername())) {
                 if (userRepository.existsByUsernameIgnoreCase(newUsername)) {
                     throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -415,7 +436,8 @@ public class AuthService {
         }
 
         if (StringUtils.hasText(request.getFullName())) {
-            user.setFullName(request.getFullName().trim());
+            String fullName = request.getFullName().trim();
+            user.setFullName(fullName.length() > 100 ? fullName.substring(0, 100) : fullName);
         }
 
         if (StringUtils.hasText(request.getPreferredProfile())) {
@@ -490,45 +512,5 @@ public class AuthService {
     private void recordFailure(String clientIp, String identifier) {
         rateLimitingService.recordFailedAttempt(clientIp);
         rateLimitingService.recordFailedAttempt(identifier);
-    }
-
-    /**
-     * Decodează payload-ul ID token-ului JWT trimis de Google / OpenID dacă este prezent.
-     */
-    private void enrichFromTokenIfPresent(OAuthRequest request) {
-        if (!StringUtils.hasText(request.getToken())) return;
-        try {
-            String[] parts = request.getToken().split("\\.");
-            if (parts.length >= 2) {
-                String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
-                if (!StringUtils.hasText(request.getProviderId()) && payloadJson.contains("\"sub\"")) {
-                    request.setProviderId(extractJsonField(payloadJson, "sub"));
-                }
-                if (!StringUtils.hasText(request.getEmail()) && payloadJson.contains("\"email\"")) {
-                    request.setEmail(extractJsonField(payloadJson, "email"));
-                }
-                if (!StringUtils.hasText(request.getName()) && payloadJson.contains("\"name\"")) {
-                    request.setName(extractJsonField(payloadJson, "name"));
-                }
-                if (!StringUtils.hasText(request.getAvatarUrl()) && payloadJson.contains("\"picture\"")) {
-                    request.setAvatarUrl(extractJsonField(payloadJson, "picture"));
-                }
-            }
-        } catch (Exception ignored) {
-            // Fallback dacă token-ul este un string simplu (dev/mock)
-        }
-    }
-
-    private String extractJsonField(String json, String field) {
-        String key = "\"" + field + "\":\"";
-        int start = json.indexOf(key);
-        if (start != -1) {
-            start += key.length();
-            int end = json.indexOf("\"", start);
-            if (end != -1) {
-                return json.substring(start, end);
-            }
-        }
-        return null;
     }
 }

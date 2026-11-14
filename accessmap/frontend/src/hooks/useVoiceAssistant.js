@@ -62,6 +62,18 @@ const NAV_DESTINATION_PREFIXES = [
   /^(?:seteaza|pune|alege|cauta|cauta-mi|gaseste|gaseste-mi|arata-mi|arata)\s+(?:destinatia\s+)?(?:drumul\s+)?(?:la|in|spre|catre|pe)?\s*/i,
   /^(?:destinatia|destinatie)\s+(?:este\s+|e\s+|la\s+|in\s+|spre\s+|catre\s+)?/i,
   /^(?:la|in|spre|catre)\s+/i,
+  // English ("Take me to Kaufland", "Navigate to the train station", "I want to go to ...")
+  /^(?:hey|ok|okay|please)\s+/i,
+  /^(?:take|bring|get|guide|walk|lead)\s+me\s+(?:to|towards)\s+/i,
+  /^(?:go|navigate|directions|route|walk|head|drive)\s+(?:me\s+)?(?:to|towards)\s+/i,
+  /^(?:i\s+)?(?:want|wanna|need|would like|'d like|d like)\s+(?:to\s+)?go\s+(?:to\s+)?/i,
+  /^(?:let'?s|lets)\s+go\s+(?:to\s+)?/i,
+  /^(?:how do i get|how can i get|how to get)\s+to\s+/i,
+  /^(?:find|find me|search for|show me|where is)\s+/i,
+  /^(?:the|a|an)\s+/i,
+  // "cel mai apropiat Kaufland" / "the nearest Kaufland": the search already picks the closest one
+  /^(?:cel|cea)\s+mai\s+(?:apropiat[ae]?|aproape)\s+/i,
+  /^(?:nearest|closest)\s+/i,
 ];
 
 function containsAny(normalizedText, triggers) {
@@ -82,7 +94,9 @@ export function extractAddress(raw) {
     }
   }
   text = text
-    .replace(/\s+(?:te rog|va rog|multumesc|mersi|acum|repede)$/i, '')
+    .replace(/\s+(?:te rog|va rog|multumesc|mersi|acum|repede|please|now|thanks|thank you)$/i, '')
+    .replace(/\s+(?:cel|cea)\s+mai\s+(?:apropiat[ae]?|aproape)$/i, '')
+    .replace(/\s+(?:near me|nearby|close by)$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
   if (!text) return '';

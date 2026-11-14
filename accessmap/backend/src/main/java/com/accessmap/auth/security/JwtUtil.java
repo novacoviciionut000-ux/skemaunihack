@@ -9,8 +9,12 @@ import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -19,17 +23,23 @@ import java.util.function.Function;
 @Component
 public class JwtUtil {
 
+    private static final Logger log = LoggerFactory.getLogger(JwtUtil.class);
+
     private final SecretKey key;
     private final long expirationMs;
 
     public JwtUtil(
-            @Value("${jwt.secret:***REMOVED***}") String secret,
+            @Value("${jwt.secret:}") String secret,
             @Value("${jwt.expiration-ms:86400000}") long expirationMs) {
-        // Asigurăm că cheia are cel puțin 256 de biți (32 bytes) pentru securitate HMAC-SHA256
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        if (keyBytes.length < 32) {
-            String padded = String.format("%-32s", secret).replace(' ', '0');
-            keyBytes = padded.getBytes(StandardCharsets.UTF_8);
+        byte[] keyBytes = secret == null ? new byte[0] : secret.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length == 0) {
+            // No secret configured: use a random per-process key so tokens can never be forged
+            // with a value from the source code. Tokens become invalid on restart.
+            keyBytes = new byte[48];
+            new SecureRandom().nextBytes(keyBytes);
+            log.warn("JWT_SECRET is not set; using a random key. Users must log in again after each restart.");
+        } else if (keyBytes.length < 32) {
+            throw new IllegalStateException("JWT_SECRET must be at least 32 bytes (256 bits) long.");
         }
         this.key = Keys.hmacShaKeyFor(keyBytes);
         this.expirationMs = expirationMs;

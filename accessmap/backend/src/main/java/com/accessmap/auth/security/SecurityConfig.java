@@ -60,18 +60,20 @@ public class SecurityConfig {
                     response.getWriter().write("{\"error\":\"Neautorizat: Este necesar un token valid pentru această acțiune.\",\"status\":401}");
                 }))
                 .authorizeHttpRequests(auth -> auth
-                        // 1. Endpoint-urile de autentificare sunt complet publice
-                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/oauth/**", "/api/auth/check-username").permitAll()
-                        // 2. Navigarea și harta sunt publice (pietoni, scaune cu rotile)
-                        .requestMatchers("/api/v1/**").permitAll()
+                        .requestMatchers("/error").permitAll()
+                        // 1. Endpoint-urile publice de autentificare
+                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login",
+                                "/api/auth/oauth", "/api/auth/oauth/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/check-username", "/api/auth/oauth-config").permitAll()
+                        // 2. Navigarea, TTS și harta sunt publice
+                        .requestMatchers(HttpMethod.GET, "/api/v1/**").permitAll()
                         .requestMatchers("/api/geocode/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/reports/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/reports").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/reports/*/upvote").permitAll()
-                        // 3. Resurse ce necesită autentificare (profil utilizator curent, actualizări)
-                        .requestMatchers("/api/auth/me", "/api/auth/profile").authenticated()
-                        // 4. Orice altceva e permis pentru testare flexibilă
-                        .anyRequest().permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/reports").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/reports", "/api/reports/*/upvote").permitAll()
+                        // 3. Resurse ce necesită autentificare
+                        .requestMatchers("/api/auth/me", "/api/auth/profile", "/api/auth/test-email").authenticated()
+                        // 4. Orice endpoint nelistat explicit este refuzat
+                        .anyRequest().denyAll()
                 )
                 // Adăugăm filtrul JWT înainte de cel clasic
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

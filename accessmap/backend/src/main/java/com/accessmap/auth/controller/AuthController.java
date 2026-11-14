@@ -3,6 +3,7 @@ package com.accessmap.auth.controller;
 import com.accessmap.auth.dto.*;
 import com.accessmap.auth.service.AuthService;
 import com.accessmap.auth.service.EmailService;
+import com.accessmap.common.ClientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,22 +41,28 @@ public class AuthController {
         config.put("googleClientId", googleClientId);
         config.put("googleConfigured", !googleClientId.equals("mock-google-client-id"));
         config.put("mailConfigured", emailService.isSmtpConfigured());
-        config.put("mailRecipientLast", emailService.getLastSentRecipient());
-        config.put("mailDeliveryMode", emailService.getLastDeliveryMode());
         return ResponseEntity.ok(config);
     }
 
+    /**
+     * Sends a test email to the logged-in user's own address. It used to be public and accept
+     * any recipient, which turned the app's Gmail account into an open spam relay.
+     */
     @PostMapping("/test-email")
-    public ResponseEntity<Map<String, Object>> testEmail(@RequestBody Map<String, String> body) {
-        String toEmail = body != null ? body.get("toEmail") : null;
+    public ResponseEntity<Map<String, Object>> testEmail() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        String toEmail = authService.getCurrentUserProfile(auth.getName()).getEmail();
         boolean success = emailService.sendTestEmail(toEmail);
         Map<String, Object> resp = new HashMap<>();
         resp.put("success", success);
         resp.put("recipient", toEmail);
         resp.put("deliveryMode", emailService.getLastDeliveryMode());
         resp.put("message", emailService.isSmtpConfigured()
-                ? "Email de confirmare trimis live prin Gmail SMTP către " + toEmail
-                : "Notificare de securitate generată și logată local pentru " + toEmail + " (Configurează SMTP_PASSWORD pentru livrare live)");
+                ? "Email de test trimis către " + toEmail
+                : "SMTP nu este configurat; emailul de test a fost doar logat local.");
         return ResponseEntity.ok(resp);
     }
 
@@ -184,10 +191,6 @@ public class AuthController {
     }
 
     private String extractClientIp(HttpServletRequest request) {
-        String xfHeader = request.getHeader("X-Forwarded-For");
-        if (xfHeader == null || xfHeader.isEmpty() || "unknown".equalsIgnoreCase(xfHeader)) {
-            return request.getRemoteAddr();
-        }
-        return xfHeader.split(",")[0].trim();
+        return ClientIp.resolve(request);
     }
 }

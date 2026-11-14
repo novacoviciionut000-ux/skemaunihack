@@ -161,96 +161,42 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("Înregistrarea prin Google alocă un username unic garantat și salvează googleId")
-    void testOAuthGoogleNewUser() {
+    @DisplayName("Google OAuth fără token este refuzat (nu se poate prelua un cont doar cu emailul)")
+    void testOAuthGoogleWithoutTokenIsRejected() {
         OAuthRequest req = new OAuthRequest();
         req.setProvider("google");
-        req.setEmail("andrei.ionescu@gmail.com");
-        req.setName("Andrei Ionescu");
-        req.setProviderId("google_sub_10928374");
-
-        when(userRepository.findByGoogleId("google_sub_10928374")).thenReturn(Optional.empty());
-        when(userRepository.findByEmailIgnoreCase("andrei.ionescu@gmail.com")).thenReturn(Optional.empty());
-        when(userRepository.existsByUsernameIgnoreCase(anyString())).thenReturn(false);
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
-            User u = invocation.getArgument(0);
-            u.setId(20L);
-            return u;
-        });
-
-        AuthResponse resp = authService.oauthLogin(req);
-
-        assertNotNull(resp);
-        assertEquals("andrei_ionescu", resp.getUsername());
-        assertEquals("andrei.ionescu@gmail.com", resp.getEmail());
-        assertTrue(resp.isHasGoogle());
-        assertEquals("mocked_jwt_token_12345", resp.getToken());
-
-        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(captor.capture());
-        User saved = captor.getValue();
-        assertEquals("google_sub_10928374", saved.getGoogleId());
-    }
-
-    @Test
-    @DisplayName("Dacă un cont există deja (ex: creat local), logarea prin Google leagă contul (Account Linking)")
-    void testOAuthGoogleExistingLocalUserLinksAccount() {
-        User existing = new User();
-        existing.setId(5L);
-        existing.setUsername("ion_popescu");
-        existing.setEmail("ion.popescu@gmail.com");
-        existing.setPasswordHash(passwordEncoder.encode("ParolaLocala123!"));
-        existing.setRole(Role.ROLE_USER);
-        existing.setProvider(AuthProvider.LOCAL);
-        existing.setEnabled(true);
-
-        when(userRepository.findByGoogleId("google_sub_999")).thenReturn(Optional.empty());
-        when(userRepository.findByEmailIgnoreCase("ion.popescu@gmail.com")).thenReturn(Optional.of(existing));
-        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        OAuthRequest req = new OAuthRequest();
-        req.setProvider("google");
-        req.setEmail("ion.popescu@gmail.com");
-        req.setName("Ion Popescu");
+        req.setEmail("victima@gmail.com");
         req.setProviderId("google_sub_999");
 
-        AuthResponse resp = authService.oauthLogin(req);
-
-        assertNotNull(resp);
-        assertEquals("ion_popescu", resp.getUsername());
-        assertEquals("google_sub_999", existing.getGoogleId());
-        assertTrue(resp.isHasPassword());
-        assertTrue(resp.isHasGoogle());
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> authService.oauthLogin(req));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
-    @DisplayName("Logarea ulterioară prin Facebook pe același cont nu șterge googleId")
-    void testOAuthFacebookMultiProviderSupport() {
-        User existing = new User();
-        existing.setId(5L);
-        existing.setUsername("ion_popescu");
-        existing.setEmail("ion.popescu@gmail.com");
-        existing.setGoogleId("google_sub_999");
-        existing.setRole(Role.ROLE_USER);
-        existing.setEnabled(true);
+    @DisplayName("Google OAuth cu token este refuzat dacă GOOGLE_CLIENT_ID nu e configurat")
+    void testOAuthGoogleWithoutClientIdIsRejected() {
+        OAuthRequest req = new OAuthRequest();
+        req.setProvider("google");
+        req.setToken("header.payload.signature");
+        req.setEmail("victima@gmail.com");
 
-        when(userRepository.findByFacebookId("facebook_sub_888")).thenReturn(Optional.empty());
-        when(userRepository.findByEmailIgnoreCase("ion.popescu@gmail.com")).thenReturn(Optional.of(existing));
-        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> authService.oauthLogin(req));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, ex.getStatusCode());
+        verify(userRepository, never()).save(any(User.class));
+    }
 
+    @Test
+    @DisplayName("Facebook OAuth (neverificabil pe server) este refuzat")
+    void testOAuthFacebookIsRejected() {
         OAuthRequest req = new OAuthRequest();
         req.setProvider("facebook");
-        req.setEmail("ion.popescu@gmail.com");
-        req.setName("Ion Popescu");
+        req.setEmail("victima@gmail.com");
         req.setProviderId("facebook_sub_888");
 
-        AuthResponse resp = authService.oauthLogin(req);
-
-        assertNotNull(resp);
-        assertEquals("google_sub_999", existing.getGoogleId());
-        assertEquals("facebook_sub_888", existing.getFacebookId());
-        assertTrue(resp.isHasGoogle());
-        assertTrue(resp.isHasFacebook());
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> authService.oauthLogin(req));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test

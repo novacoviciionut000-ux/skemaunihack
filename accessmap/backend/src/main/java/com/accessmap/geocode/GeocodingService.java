@@ -7,15 +7,25 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class GeocodingService {
 
     private final RestClient client;
-    private final Map<String, GeocodeResult> cache = new ConcurrentHashMap<>();
+    private static final int MAX_CACHE_SIZE = 2_000;
+
+    // Bounded LRU so arbitrary unique queries can't grow memory forever
+    private final Map<String, GeocodeResult> cache = Collections.synchronizedMap(
+            new LinkedHashMap<>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, GeocodeResult> eldest) {
+                    return size() > MAX_CACHE_SIZE;
+                }
+            });
 
     @Value("${google.maps.api-key}")
     private String apiKey;

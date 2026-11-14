@@ -87,6 +87,11 @@ export function playTiltBeep() {
   playTones({ freqs: [300, 240], type: 'sine', step: 0.14, length: 0.095, peak: 0.18 });
 }
 
+/** Short rising tone: "microphone is listening now". */
+export function playListenBeep() {
+  playTones({ freqs: [660, 990], type: 'sine', step: 0.09, length: 0.08, peak: 0.22 });
+}
+
 /** Resume the AudioContext; call from a user gesture. */
 export function unlockAudioContext() {
   const ctx = getAudioCtx();
