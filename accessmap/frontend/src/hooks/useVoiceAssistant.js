@@ -1,51 +1,91 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { speechQueue } from '../utils/speechQueue';
 
-// ─── Comenzile vocale recunoscute ─────────────────────────────────────────────
+// ─── Normalizare text românesc (fără diacritice, lowercase) ───────────────────
+export function normalizeVoiceText(str) {
+  return (str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[.,!?;:]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// ─── Comenzile vocale recunoscute (forma normalizată, fără diacritice) ───────
 const CAMERA_TRIGGERS = [
-  'deschide camera', 'pornește camera', 'porneste camera', 'activează camera',
-  'activeaza camera', 'deschide cam', 'camera on', 'vreau camera',
-  'deschide-mi camera', 'arată camera', 'arata camera',
+  'deschide camera', 'porneste camera', 'activeaza camera',
+  'deschide cam', 'camera on', 'vreau camera',
+  'deschide-mi camera', 'arata camera', 'arata-mi camera',
 ];
 
 const CAMERA_CLOSE_TRIGGERS = [
-  'închide camera', 'inchide camera', 'oprește camera', 'opreste camera',
-  'camera off', 'dezactivează camera', 'dezactiveaza camera',
+  'inchide camera', 'opreste camera', 'camera off', 'dezactiveaza camera',
 ];
 
 const EMERGENCY_TRIGGERS = [
-  'ajutor', 'urgență', 'urgenta', '112', 'sos',
+  'ajutor', 'urgenta', '112', 'sos',
 ];
 
 const NAV_GUIDANCE_TRIGGERS = [
-  'pe unde trebuie să o iau', 'pe unde o iau', 'pe unde merg',
-  'încotro o iau', 'incotro o iau', 'următorul pas', 'urmatorul pas',
-  'pe unde să merg', 'pe unde sa merg', 'ghidează-mă', 'ghideaza-ma',
-  'start navigare', 'pornește navigarea', 'porneste navigarea', 'navigare pas cu pas',
-  'pe unde tre sa o iau', 'pe unde trebe sa o iau',
+  'pe unde trebuie sa o iau', 'pe unde o iau', 'pe unde merg',
+  'incotro o iau', 'urmatorul pas', 'pe unde sa merg', 'ghideaza-ma',
+  'start navigare', 'porneste navigarea', 'incepe navigarea', 'incepe ghidarea',
+  'navigare pas cu pas', 'pe unde tre sa o iau', 'pe unde trebe sa o iau',
+];
+
+const YES_TRIGGERS = [
+  'da', 'da te rog', 'confirm', 'confirma', 'corect', 'exact',
+  'ok', 'bine', 'mergem', 'porneste', 'hai', 'asa e', 'perfect',
+];
+
+const NO_TRIGGERS = [
+  'nu', 'nu e bine', 'anuleaza', 'opreste', 'gresit', 'altceva', 'alta adresa',
+];
+
+const CANCEL_ROUTE_TRIGGERS = [
+  'anuleaza ruta', 'opreste navigarea', 'sterge ruta', 'anuleaza traseul', 'opreste traseul',
+];
+
+const STATUS_TRIGGERS = [
+  'cat mai am', 'cat dureaza', 'status ruta', 'unde merg', 'ce destinatie am', 'cat e pana acolo',
 ];
 
 const NAV_DESTINATION_PREFIXES = [
-  /^(du-mă la|du ma la|du-mă spre|du ma spre)\s+/,
-  /^(vreau să merg la|vreau sa merg la)\s+/,
-  /^(navighează (la|către|catre)|navigheaza (la|catre|către))\s+/,
-  /^(mergi la|du-te la)\s+/,
-  /^(setează destinația la|seteaza destinatia la)\s+/,
-  /^(pleacă spre|pleaca spre|pleacă la|pleaca la)\s+/,
-  /^(arată-mi drumul (la|spre|către)|arata-mi drumul (la|spre|catre))\s+/,
-  /^(navigare la|navigare spre)\s+/,
+  /^(?:hei|ok|te rog|va rog|asistent|accessmap)\s+/i,
+  /^(?:vreau|as vrea|as dori|doresc)\s+(?:sa\s+)?(?:ajung|merg|plec|ma duc|ma deplasez)\s+(?:la|in|spre|catre|pe|pana la|pana in)\s+/i,
+  /^(?:vreau|as vrea|as dori|doresc)\s+(?:la|in|spre|catre|pe)\s+/i,
+  /^(?:cum|pe unde)\s+(?:pot\s+sa\s+)?ajung\s+(?:la|in|spre|catre|pe|pana la|pana in)\s+/i,
+  /^(?:du-ma|du ma|ma duci|poti sa ma duci|ma poti duce)\s+(?:la|in|spre|catre|pe|pana la|pana in)\s+/i,
+  /^(?:navigheaza|navigare|ghideaza-ma|ghideaza ma|traseu|ruta|drum|drumul)\s+(?:la|in|spre|catre|pe|pana la|pana in)\s+/i,
+  /^(?:mergi|du-te|du te|pleaca|porneste|o iau|mergem)\s+(?:la|in|spre|catre|pe|pana la|pana in)\s+/i,
+  /^(?:seteaza|pune|alege|cauta|cauta-mi|gaseste|gaseste-mi|arata-mi|arata)\s+(?:destinatia\s+)?(?:drumul\s+)?(?:la|in|spre|catre|pe)?\s*/i,
+  /^(?:destinatia|destinatie)\s+(?:este\s+|e\s+|la\s+|in\s+|spre\s+|catre\s+)?/i,
+  /^(?:la|in|spre|catre)\s+/i,
 ];
 
-function containsAny(text, triggers) {
-  return triggers.some((t) => text.includes(t));
+function containsAny(normalizedText, triggers) {
+  return triggers.some((t) => normalizedText.includes(t));
 }
 
-function extractAddress(raw) {
-  let text = raw.toLowerCase().trim();
-  for (const pattern of NAV_DESTINATION_PREFIXES) {
-    text = text.replace(pattern, '');
+export function extractAddress(raw) {
+  let text = normalizeVoiceText(raw);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const pattern of NAV_DESTINATION_PREFIXES) {
+      const next = text.replace(pattern, '').trim();
+      if (next !== text) {
+        text = next;
+        changed = true;
+      }
+    }
   }
-  text = text.replace(/\s+/g, ' ').replace(/[.!?]$/, '').trim();
+  text = text
+    .replace(/\s+(?:te rog|va rog|multumesc|mersi|acum|repede)$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return '';
   // Capitalizează fiecare cuvânt
   return text.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
@@ -57,6 +97,11 @@ export function useVoiceAssistant({
   onCameraOpen,
   onCameraClose,
   onStartNavigation,
+  onCancelRoute,
+  onStatusQuery,
+  awaitingConfirmation = false,
+  onConfirmYes,
+  onConfirmNo,
   alwaysOn = false,          // dacă true, pornește microfonul automat și îl ține activ
 }) {
   const [isListening, setIsListening] = useState(false);
@@ -67,63 +112,126 @@ export function useVoiceAssistant({
   const recognitionRef = useRef(null);
   const shouldRestartRef = useRef(false);  // controlăm restart-ul continuu
   const isSpeakingRef = useRef(false);     // blocăm microfonul în timp ce vorbește aplicația
+  const awaitingConfirmRef = useRef(awaitingConfirmation);
+
+  useEffect(() => {
+    awaitingConfirmRef.current = awaitingConfirmation;
+  }, [awaitingConfirmation]);
 
   // ─── TTS secvențial prin speechQueue ────────────────────────────────────
-  const speak = useCallback((text, lang = 'ro-RO') => {
+  const speak = useCallback((text, options = {}) => {
+    const { lang = 'ro-RO', interrupt = false, onEnd = null } =
+      typeof options === 'string' ? { lang: options } : options;
+
+    if (!speechQueue._unlocked) {
+      speechQueue.unlock();
+    }
     isSpeakingRef.current = true;
     speechQueue.speak(text, {
       lang,
       priority: 'high',
+      interrupt,
+      onEnd: () => {
+        isSpeakingRef.current = false;
+        if (onEnd) onEnd();
+      },
     });
-    setTimeout(() => {
-      isSpeakingRef.current = false;
-    }, Math.max(2000, text.split(' ').length * 500));
   }, []);
 
   // ─── Procesare rezultat recunoscut ───────────────────────────────────────
   const processResult = useCallback((spoken) => {
-    const lower = spoken.toLowerCase().trim();
+    const normalized = normalizeVoiceText(spoken);
+
+    // 0. Dacă așteptăm confirmare Da / Nu pentru o destinație propusă
+    if (awaitingConfirmRef.current) {
+      const isExactYes = YES_TRIGGERS.some(
+        (t) => normalized === t || normalized.startsWith(`${t} `)
+      );
+      const isExactNo = NO_TRIGGERS.some(
+        (t) => normalized === t || normalized.startsWith(`${t} `)
+      );
+
+      if (isExactYes) {
+        if (onConfirmYes) onConfirmYes();
+        return;
+      }
+      if (isExactNo) {
+        // Dacă utilizatorul a zis "nu, la <altă adresă>", căutăm direct noua adresă
+        const remainder = normalized.replace(/^(?:nu|gresit|altceva)[,\s]*/i, '').trim();
+        const maybeNewAddress = extractAddress(remainder);
+        if (remainder.length >= 3 && maybeNewAddress.length >= 3) {
+          if (onConfirmNo) onConfirmNo(maybeNewAddress);
+          return;
+        }
+        if (onConfirmNo) onConfirmNo(null);
+        return;
+      }
+    }
 
     // 1. Urgență
-    if (containsAny(lower, EMERGENCY_TRIGGERS)) {
-      speak('Alertă de urgență activată! Se pregătesc coordonatele pentru 112.');
+    if (containsAny(normalized, EMERGENCY_TRIGGERS)) {
+      speak('Alertă de urgență activată! Se pregătesc coordonatele pentru 112.', { interrupt: true });
       if (onEmergency) onEmergency();
       return;
     }
 
     // 2. Deschide camera
-    if (containsAny(lower, CAMERA_TRIGGERS)) {
-      speak('Deschid camera.');
+    if (containsAny(normalized, CAMERA_TRIGGERS)) {
+      speak('Deschid camera.', { interrupt: true });
       if (onCameraOpen) onCameraOpen();
       return;
     }
 
     // 3. Închide camera
-    if (containsAny(lower, CAMERA_CLOSE_TRIGGERS)) {
-      speak('Închid camera.');
+    if (containsAny(normalized, CAMERA_CLOSE_TRIGGERS)) {
+      speak('Închid camera.', { interrupt: true });
       if (onCameraClose) onCameraClose();
       return;
     }
 
-    // 4. Solicitare ghidare / start navigare în timp real
-    if (containsAny(lower, NAV_GUIDANCE_TRIGGERS)) {
-      speak('Pornesc ghidarea pas-cu-pas în timp real.');
+    // 4. Anulează ruta / oprește navigarea
+    if (containsAny(normalized, CANCEL_ROUTE_TRIGGERS)) {
+      speak('Am anulat ruta.', { interrupt: true });
+      if (onCancelRoute) onCancelRoute();
+      return;
+    }
+
+    // 5. Întrebare status / cât mai am
+    if (containsAny(normalized, STATUS_TRIGGERS)) {
+      if (onStatusQuery) onStatusQuery();
+      return;
+    }
+
+    // 6. Solicitare ghidare / start navigare în timp real
+    if (containsAny(normalized, NAV_GUIDANCE_TRIGGERS)) {
+      speak('Pornesc ghidarea pas-cu-pas în timp real.', { interrupt: true });
       if (onStartNavigation) onStartNavigation();
       return;
     }
 
-    // 5. Destinație navigare
-    const hasNavPrefix = NAV_DESTINATION_PREFIXES.some((p) => p.test(lower));
+    // 7. Destinație navigare
+    const hasNavPrefix = NAV_DESTINATION_PREFIXES.some((p) => p.test(normalized));
     const address = extractAddress(spoken);
 
-    if (hasNavPrefix || address.length >= 3) {
+    if ((hasNavPrefix && address.length >= 2) || address.length >= 3) {
       if (onDestinationRecognized) onDestinationRecognized(address);
       return;
     }
 
-    // 6. Nu am recunoscut comanda
-    speak('Nu am înțeles comanda. Spune, de exemplu: Du-mă la Piața Victoriei, Pe unde trebuie să o iau, sau Deschide camera.');
-  }, [speak, onEmergency, onCameraOpen, onCameraClose, onStartNavigation, onDestinationRecognized]);
+    // 8. Nu am recunoscut comanda
+    speak('Nu am înțeles comanda. Spune, de exemplu: Du-mă la Piața Victoriei, Cât mai am, sau Deschide camera.');
+  }, [
+    speak,
+    onEmergency,
+    onCameraOpen,
+    onCameraClose,
+    onCancelRoute,
+    onStatusQuery,
+    onStartNavigation,
+    onDestinationRecognized,
+    onConfirmYes,
+    onConfirmNo,
+  ]);
 
   // ─── Pornire recognition ──────────────────────────────────────────────────
   const startListening = useCallback(() => {
@@ -154,11 +262,11 @@ export function useVoiceAssistant({
     };
 
     recognition.onresult = (event) => {
-      // Alege cea mai lungă alternativă
+      // Alege alternativa cu cel mai mare scor de încredere (implicit prima)
       const results = Array.from(event.results[0]);
       const best = results.reduce((a, b) =>
-        a.transcript.length >= b.transcript.length ? a : b
-      );
+        (b.confidence || 0) > (a.confidence || 0) ? b : a
+      , results[0]);
       const spoken = best.transcript.trim();
       setTranscript(spoken);
       processResult(spoken);

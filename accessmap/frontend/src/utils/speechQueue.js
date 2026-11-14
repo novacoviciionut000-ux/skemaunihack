@@ -109,6 +109,8 @@ class SpeechQueueManager {
     this.voiceEnabled = true;
     this.voices = [];
     this._unlocked = false;
+    this._currentUtterance = null;
+    this._watchdogTimer = null;
 
     if (typeof window !== 'undefined') {
       this._init();
@@ -151,10 +153,12 @@ class SpeechQueueManager {
   }
 
   unlock() {
+    if (this._unlocked) return;
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    this._unlocked = true;
     try {
       if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-      // Silent utterance to open audio channel on iOS/Android
+      // Silent utterance to open audio channel on iOS/Android (only once)
       const silent = new SpeechSynthesisUtterance('\u200B');
       silent.volume = 0;
       silent.rate = 10;
@@ -182,31 +186,54 @@ class SpeechQueueManager {
    *   - lang: string (default 'ro-RO')
    */
   speak(text, options = {}) {
-    if (!this.voiceEnabled) return;
-    if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    const trimmed = String(text).trim();
-    if (!trimmed) return;
-
     const {
-      rate = 1.2,
+      rate = 1.1,
       pitch = 1.0,
       lang = 'ro-RO',
       interrupt = false,
       priority = 'normal',
+      onEnd = null,
     } = options;
+
+    if (!this.voiceEnabled) {
+      if (onEnd) onEnd();
+      return;
+    }
+    if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      if (onEnd) onEnd();
+      return;
+    }
+
+    const trimmed = String(text).trim();
+    if (!trimmed) {
+      if (onEnd) onEnd();
+      return;
+    }
 
     const weight = PRIORITY_WEIGHT[priority] ?? PRIORITY_WEIGHT.normal;
 
     if (interrupt) {
+      const wasActive =
+        this.isSpeaking ||
+        (typeof window !== 'undefined' &&
+          window.speechSynthesis &&
+          (window.speechSynthesis.speaking || window.speechSynthesis.pending));
       this.cancel();
-      this._enqueue({ text: trimmed, priority, weight, lang, rate, pitch });
-      this._processQueue();
+      this._enqueue({ text: trimmed, priority, weight, lang, rate, pitch, onEnd });
+      if (wasActive) {
+        // iOS Safari & Chrome silently drop speak() if called synchronously right after cancel()
+        setTimeout(() => this._processQueue(), 60);
+      } else {
+        this._processQueue();
+      }
       return;
     }
 
     // Deduplication: skip if same text already in queue or currently speaking
-    if (this.queue.some((item) => item.text === trimmed)) return;
+    if (this.queue.some((item) => item.text === trimmed)) {
+      if (onEnd) onEnd();
+      return;
+    }
 
     // Drop low-priority items when queue is full (keep up to 3 items max)
     if (this.queue.length >= 3) {
@@ -215,11 +242,12 @@ class SpeechQueueManager {
       if (lowestIdx !== -1 && this.queue[lowestIdx].weight < weight) {
         this.queue.splice(lowestIdx, 1);
       } else {
+        if (onEnd) onEnd();
         return; // Queue full with higher priority items — skip this one
       }
     }
 
-    this._enqueue({ text: trimmed, priority, weight, lang, rate, pitch });
+    this._enqueue({ text: trimmed, priority, weight, lang, rate, pitch, onEnd });
 
     if (!this.isSpeaking) {
       this._processQueue();
@@ -268,22 +296,38 @@ class SpeechQueueManager {
     utterance.lang = item.lang || 'ro-RO';
     utterance.rate = item.rate || 1.0;
     utterance.pitch = item.pitch || 1.0;
+    this._currentUtterance = utterance;
 
     if (!this.voices.length) this._loadVoices();
     const roVoice = this.getRomanianVoice();
     if (roVoice) utterance.voice = roVoice;
 
-    // Chain: when this utterance ends, process the next one directly (no setTimeout)
-    utterance.onend = () => {
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (this._watchdogTimer) {
+        clearTimeout(this._watchdogTimer);
+        this._watchdogTimer = null;
+      }
+      this._currentUtterance = null;
       this.isSpeaking = false;
+      if (item.onEnd) {
+        try { item.onEnd(); } catch {}
+      }
       this._processQueue();
     };
+
+    // Watchdog in case mobile Safari drops onend
+    this._watchdogTimer = setTimeout(finish, Math.max(4500, item.text.length * 130));
+
+    // Chain: when this utterance ends, process the next one directly (no setTimeout)
+    utterance.onend = finish;
     utterance.onerror = (e) => {
       if (e.error !== 'interrupted' && e.error !== 'canceled') {
         console.warn('[SpeechQueue] error:', e.error, '—', item.text.slice(0, 40));
       }
-      this.isSpeaking = false;
-      this._processQueue();
+      finish();
     };
 
     try {
@@ -298,6 +342,11 @@ class SpeechQueueManager {
   cancel() {
     this.queue = [];
     this.isSpeaking = false;
+    if (this._watchdogTimer) {
+      clearTimeout(this._watchdogTimer);
+      this._watchdogTimer = null;
+    }
+    this._currentUtterance = null;
     try {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();

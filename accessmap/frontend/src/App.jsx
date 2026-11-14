@@ -587,6 +587,9 @@ export default function App() {
             }}
             onCameraClose={() => setCameraOpen(false)}
             onStartNavigation={handleStartNavigation}
+            onCancelRoute={handleClearRoute}
+            routeData={routeData}
+            userLocation={userLocation}
           />
         </div>
       )}

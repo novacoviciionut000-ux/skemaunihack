@@ -273,64 +273,105 @@ export const normalizeSearchText = (str) =>
         .trim();
 
 const TIMISOARA_LANDMARKS = [
-    { displayName: 'Piața Victoriei (Centru / Operă), Timișoara', lat: 45.7538, lng: 21.2257, keywords: ['centru', 'opera', 'victoriei', 'piata victoriei', 'teatru'] },
+    { displayName: 'Piața Victoriei (Centru / Operă), Timișoara', lat: 45.7538, lng: 21.2257, keywords: ['centru', 'opera', 'piata operei', 'victoriei', 'piata victoriei', 'teatru'] },
     { displayName: 'Catedrala Mitropolitană, Timișoara', lat: 45.7513, lng: 21.2245, keywords: ['catedrala', 'mitropolie', 'biserica', 'centru'] },
     { displayName: 'Piața Unirii (Centrul Vechi), Timișoara', lat: 45.7579, lng: 21.2289, keywords: ['unirii', 'piata unirii', 'dom', 'baroc', 'centru vechi'] },
     { displayName: 'Piața Libertății, Timișoara', lat: 45.7557, lng: 21.2272, keywords: ['libertatii', 'piata libertatii', 'primarie'] },
-    { displayName: 'Iulius Town / Iulius Mall, Timișoara', lat: 45.7663, lng: 21.2291, keywords: ['iulius', 'mall', 'shopping', 'openville', 'aradului'] },
+    { displayName: 'Bastionul Maria Theresia, Timișoara', lat: 45.7568, lng: 21.2335, keywords: ['bastion', 'bastionul', 'theresia', 'muzeu'] },
+    { displayName: 'Iulius Town / Iulius Mall, Timișoara', lat: 45.7663, lng: 21.2291, keywords: ['iulius', 'iulius town', 'iulius mall', 'mall', 'shopping', 'openville', 'aradului'] },
     { displayName: 'Shopping City Timișoara (Calea Șagului)', lat: 45.7228, lng: 21.2062, keywords: ['shopping city', 'mall sagului', 'sagului', 'carrefour'] },
     { displayName: 'Gara de Nord, Timișoara', lat: 45.7505, lng: 21.2084, keywords: ['gara', 'gara de nord', 'tren', 'cfr'] },
+    { displayName: 'Gara de Est, Timișoara', lat: 45.7560, lng: 21.2580, keywords: ['gara de est', 'est', 'fabric'] },
     { displayName: 'Universitatea Politehnica Timișoara (UPT)', lat: 45.7489, lng: 21.2280, keywords: ['upt', 'politehnica', 'electro', 'rectorat', 'facultate'] },
     { displayName: 'Universitatea de Vest din Timișoara (UVT)', lat: 45.7471, lng: 21.2315, keywords: ['uvt', 'universitatea de vest', 'parvan', 'studentesc'] },
-    { displayName: 'Complexul Studențesc, Timișoara', lat: 45.7460, lng: 21.2380, keywords: ['complex', 'complex studentesc', 'camine', 'studenti'] },
-    { displayName: 'Spitalul Clinic Județean de Urgență, Timișoara', lat: 45.7408, lng: 21.2415, keywords: ['spital', 'judetean', 'urgenta', 'sanatate', 'medicina'] },
+    { displayName: 'Universitatea de Medicină și Farmacie (UMFT), Timișoara', lat: 45.7563, lng: 21.2266, keywords: ['umft', 'medicina', 'universitatea de medicina', 'eftimie murgu'] },
+    { displayName: 'Complexul Studențesc, Timișoara', lat: 45.7460, lng: 21.2380, keywords: ['complex', 'complexul', 'complexu', 'complex studentesc', 'complexul studentesc', 'camine', 'camin', 'cantina', 'studenti'] },
+    { displayName: 'Spitalul Clinic Județean de Urgență, Timișoara', lat: 45.7408, lng: 21.2415, keywords: ['spital', 'spitalul judetean', 'judetean', 'urgenta', 'sanatate'] },
     { displayName: 'Spitalul Municipal (Clinicile Noi), Timișoara', lat: 45.7585, lng: 21.2230, keywords: ['spital', 'municipal', 'clinicile noi', 'botanic'] },
     { displayName: 'Spitalul de Copii Louis Țurcanu, Timișoara', lat: 45.7530, lng: 21.2210, keywords: ['spital', 'copii', 'louis turcanu', 'pediatrie'] },
-    { displayName: 'Parcul Rozelor, Timișoara', lat: 45.7508, lng: 21.2312, keywords: ['parc', 'rozelor', 'trandafiri', 'bega'] },
+    { displayName: 'Parcul Rozelor, Timișoara', lat: 45.7508, lng: 21.2312, keywords: ['parc', 'rozelor', 'parcul rozelor', 'trandafiri', 'bega'] },
     { displayName: 'Parcul Central Anton Scudier, Timișoara', lat: 45.7510, lng: 21.2215, keywords: ['parcul central', 'scudier', 'parc'] },
     { displayName: 'Parcul Botanic, Timișoara', lat: 45.7600, lng: 21.2250, keywords: ['parcul botanic', 'botanic', 'parc'] },
     { displayName: 'Faleza Râului Bega (Podul Michelangelo)', lat: 45.7495, lng: 21.2340, keywords: ['bega', 'faleza', 'michelangelo', 'pod'] },
     { displayName: 'Piața Bălcescu, Timișoara', lat: 45.7400, lng: 21.2260, keywords: ['balcescu', 'piata balcescu', 'elisabetin'] },
     { displayName: 'Piața Traian, Timișoara', lat: 45.7570, lng: 21.2505, keywords: ['traian', 'piata traian', 'fabric'] },
     { displayName: 'Piața Maria (Sfânta Maria), Timișoara', lat: 45.7475, lng: 21.2185, keywords: ['maria', 'piata maria', 'sfanta maria', 'tramvai'] },
-    { displayName: 'Piața 700, Timișoara', lat: 45.7565, lng: 21.2235, keywords: ['piata 700', '700', 'spital', 'clinici'] },
+    { displayName: 'Piața 700, Timișoara', lat: 45.7565, lng: 21.2235, keywords: ['piata 700', '700'] },
+    { displayName: 'Piața Badea Cârțan, Timișoara', lat: 45.7615, lng: 21.2440, keywords: ['badea cartan', 'piata badea cartan'] },
+    { displayName: 'Stadionul Dan Păltinișanu, Timișoara', lat: 45.7403, lng: 21.2442, keywords: ['stadion', 'dan paltinisanu', 'paltinisanu'] },
     { displayName: 'Calea Torontalului, Timișoara', lat: 45.7730, lng: 21.2150, keywords: ['torontalului', 'calea torontalului', 'nord'] },
     { displayName: 'Calea Aradului, Timișoara', lat: 45.7750, lng: 21.2280, keywords: ['aradului', 'calea aradului', 'agronomie'] },
     { displayName: 'Calea Șagului, Timișoara', lat: 45.7320, lng: 21.2100, keywords: ['sagului', 'calea sagului', 'dambovita'] },
-    { displayName: 'Calea Girocului (Calea Martirilor), Timișoara', lat: 45.7360, lng: 21.2400, keywords: ['girocului', 'martirilor', 'calea martirilor'] },
-    { displayName: 'Bulevardul Take Ionescu, Timișoara', lat: 45.7600, lng: 21.2400, keywords: ['take ionescu', 'bulevard', 'politie'] },
+    { displayName: 'Calea Girocului (Calea Martirilor), Timișoara', lat: 45.7360, lng: 21.2400, keywords: ['girocului', 'martirilor', 'calea martirilor', 'soarelui'] },
+    { displayName: 'Bulevardul Take Ionescu, Timișoara', lat: 45.7600, lng: 21.2400, keywords: ['take ionescu', 'politie'] },
     { displayName: 'Bulevardul Republicii, Timișoara', lat: 45.7515, lng: 21.2150, keywords: ['republicii', 'bulevardul republicii'] },
-    { displayName: 'Aeroportul Internațional Traian Vuia Timișoara', lat: 45.8100, lng: 21.3380, keywords: ['aeroport', 'traian vuia', 'avion', 'terminal'] },
+    { displayName: 'Aeroportul Internațional Traian Vuia Timișoara', lat: 45.8100, lng: 21.3380, keywords: ['aeroport', 'aeroportul', 'traian vuia', 'avion', 'terminal'] },
 ];
 
-/** Search and autocomplete locations as user types, with proximity-based sorting */
+const SEARCH_STOPWORDS = new Set([
+    'la', 'in', 'pe', 'cu', 'de', 'din', 'spre', 'catre', 'pana',
+    'un', 'o', 'sa', 'si', 'sau', 'cel', 'cea', 'lui', 'al', 'a', 'ai', 'ale',
+    'timisoara',
+]);
+
+const GENERIC_PLACE_WORDS = new Set([
+    'strada', 'str', 'bulevardul', 'bd', 'blvd', 'calea', 'piata', 'aleea',
+    'splaiul', 'intrarea', 'parcul', 'parc', 'spitalul', 'spital', 'universitatea',
+]);
+
+function wordMatchesToken(targetWords, token) {
+    return targetWords.some((w) => {
+        if (w === token) return true;
+        // Potrivire de prefix pentru articole hotărâte / forme vorbite (ex: complex <-> complexul / complexu)
+        const minLen = Math.min(w.length, token.length);
+        if (minLen >= 4 && (w.startsWith(token) || token.startsWith(w))) {
+            return true;
+        }
+        return false;
+    });
+}
+
+/** Search and autocomplete locations as user types, with relevance-first + proximity sorting */
 export const searchSuggestions = async (query = '', userLocation = null) => {
     const refCoords = userLocation && userLocation.lat != null
         ? { lat: Number(userLocation.lat), lng: Number(userLocation.lng) }
         : { lat: 45.7538, lng: 21.2257 }; // Fallback la Piața Victoriei (Centrul Timișoarei)
 
     const cleanQ = normalizeSearchText(query);
-    const queryTokens = cleanQ.length > 0 ? cleanQ.split(' ').filter(Boolean) : [];
+    const allTokens = cleanQ.length > 0 ? cleanQ.split(' ').filter(Boolean) : [];
+    const meaningfulTokens = allTokens.filter((t) => !SEARCH_STOPWORDS.has(t));
+    const queryTokens = meaningfulTokens.length > 0 ? meaningfulTokens : allTokens;
+    const distinctiveTokens = queryTokens.filter((t) => !GENERIC_PLACE_WORDS.has(t));
+    const effectiveTokens = distinctiveTokens.length > 0 ? distinctiveTokens : queryTokens;
+    const effectivePhrase = effectiveTokens.join(' ');
 
     // Helper to score landmark relevance
     const getLandmarkRelevance = (item) => {
         if (queryTokens.length === 0) return 1;
         const normTitle = normalizeSearchText(item.displayName);
-        const normKeywords = (item.keywords || []).map(normalizeSearchText).join(' ');
-        const fullSearchTarget = `${normTitle} ${normKeywords}`;
+        const normKeywords = (item.keywords || []).map(normalizeSearchText);
+        const targetWords = Array.from(new Set(
+            `${normTitle} ${normKeywords.join(' ')}`.split(' ').filter(Boolean)
+        ));
 
-        if (normTitle.startsWith(cleanQ)) return 100;
-        if (fullSearchTarget.includes(cleanQ)) return 80;
+        if (normTitle.startsWith(cleanQ) || normKeywords.some((k) => k === cleanQ || (effectivePhrase && k === effectivePhrase))) {
+            return 100;
+        }
+        if (
+            (cleanQ.length >= 4 && (normTitle.includes(cleanQ) || normKeywords.some((k) => k.includes(cleanQ)))) ||
+            (effectivePhrase.length >= 4 && (normTitle.includes(effectivePhrase) || normKeywords.some((k) => k.includes(effectivePhrase))))
+        ) {
+            return 92;
+        }
 
-        // Check if all tokens match
-        const allTokensMatch = queryTokens.every((token) => fullSearchTarget.includes(token));
-        if (allTokensMatch) return 60;
+        const matchedDistinctive = effectiveTokens.filter((token) => wordMatchesToken(targetWords, token));
+        if (matchedDistinctive.length === 0) return 0;
 
-        // Check if any token matches
-        const someTokenMatch = queryTokens.some((token) => fullSearchTarget.includes(token));
-        if (someTokenMatch) return 30;
+        if (matchedDistinctive.length === effectiveTokens.length) {
+            return 85;
+        }
 
-        return 0;
+        return Math.round(45 * (matchedDistinctive.length / effectiveTokens.length));
     };
 
     // 1. Gather local matching landmarks
@@ -357,20 +398,22 @@ export const searchSuggestions = async (query = '', userLocation = null) => {
         });
     }
 
-    // 2. If user typed >= 2 chars, also query Nominatim with Timișoara geographic bias
+    // 2. If user typed >= 2 chars, also query backend Google Geocoding & Nominatim with Timișoara geographic bias
     if (cleanQ.length >= 2) {
+        const searchQuery = cleanQ.includes('timisoara') ? query.trim() : `${query.trim()}, Timișoara`;
+
         // Încercăm întâi backend-ul local dacă este pornit
         try {
             const r = await request(`/api/geocode/suggest?q=${encodeURIComponent(query.trim())}&limit=5`);
             if (Array.isArray(r) && r.length > 0) {
-                r.filter((item) => item && item.coordinate).forEach((item) => {
+                r.filter((item) => item && item.coordinate).forEach((item, idx) => {
                     const lat = Number(item.coordinate.lat);
                     const lng = Number(item.coordinate.lng);
                     candidates.push({
                         displayName: item.displayName || item.query,
                         lat,
                         lng,
-                        relevance: 70,
+                        relevance: Math.max(65, 78 - idx * 2),
                         distanceMeters: Math.round(getDistance(refCoords, { lat, lng })),
                     });
                 });
@@ -383,19 +426,19 @@ export const searchSuggestions = async (query = '', userLocation = null) => {
         try {
             const viewbox = '21.12,45.68,21.36,45.84'; // Bounding box Timișoara metropolitan
             const res = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query.trim())}&viewbox=${viewbox}&bounded=0&limit=8&countrycodes=ro`
+                `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(searchQuery)}&viewbox=${viewbox}&bounded=0&limit=8&countrycodes=ro`
             );
             if (res.ok) {
                 const data = await res.json();
                 if (Array.isArray(data) && data.length > 0) {
-                    data.forEach((item) => {
+                    data.forEach((item, idx) => {
                         const lat = parseFloat(item.lat);
                         const lng = parseFloat(item.lon);
                         candidates.push({
                             displayName: item.display_name,
                             lat,
                             lng,
-                            relevance: 50,
+                            relevance: Math.max(50, 62 - idx * 2),
                             distanceMeters: Math.round(getDistance(refCoords, { lat, lng })),
                         });
                     });
@@ -417,13 +460,10 @@ export const searchSuggestions = async (query = '', userLocation = null) => {
         }
     });
 
-    // 4. SORT BY PROXIMITY FIRST (closer locations show up FIRST)
-    // For close relevance scores, closest distance wins
+    // 4. Sort by relevance first; distance breaks ties within the same relevance tier
     unique.sort((a, b) => {
-        // Dacă ambele au relevanță similară sau utilizatorul tastează un prefix parțial,
-        // sortăm crescător după distanță (cele mai apropiate apar primele)
         const relDiff = (b.relevance || 0) - (a.relevance || 0);
-        if (Math.abs(relDiff) > 40) {
+        if (Math.abs(relDiff) > 5) {
             return relDiff;
         }
         return a.distanceMeters - b.distanceMeters;
@@ -449,8 +489,8 @@ export const geocodeQuery = async (query) => {
 };
 
 /** Folosit de VoiceButton.jsx: caută adresa prin Google Geocoding (/api/geocode/suggest) + fallback-uri */
-export const geocodeAddress = async (query) => {
-    const list = await searchSuggestions(query);
+export const geocodeAddress = async (query, userLocation = null) => {
+    const list = await searchSuggestions(query, userLocation);
     return list && list.length > 0 ? list[0] : null;
 };
 

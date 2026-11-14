@@ -2,46 +2,115 @@ import { useState, useEffect } from 'react';
 import { useVoiceAssistant } from '../hooks/useVoiceAssistant';
 import { geocodeAddress } from '../api/client';
 
+function formatShortPlaceName(displayName, fallback) {
+  const raw = (displayName || fallback || '').trim();
+  if (!raw) return '';
+  const parts = raw
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p && !/^\d{5,6}$/.test(p) && !/^romania|românia$/i.test(p));
+  return parts.slice(0, 2).join(', ') || raw;
+}
+
 export default function VoiceButton({
   onDestinationSet,
   onEmergency,
   onCameraOpen,
   onCameraClose,
   onStartNavigation,
+  onCancelRoute,
+  routeData,
+  userLocation,
 }) {
   const [statusMessage, setStatusMessage] = useState('');
   const [statusType, setStatusType] = useState('info'); // 'info' | 'success' | 'error'
   const [alwaysOn, setAlwaysOn] = useState(false);
+  const [pendingDestination, setPendingDestination] = useState(null);
 
-  // ── Geocodare adresă recunoscută vocal ─────────────────────────────────
+  // ── Geocodare adresă recunoscută vocal + cerere de confirmare ────────────
   const handleDestinationRecognized = async (spokenAddress) => {
     setStatusMessage(`Căutare: "${spokenAddress}"...`);
     setStatusType('info');
 
     try {
-      const place = await geocodeAddress(spokenAddress);
+      const place = await geocodeAddress(spokenAddress, userLocation);
       const lat = place?.lat ?? place?.coordinate?.lat;
       const lng = place?.lng ?? place?.coordinate?.lng;
 
       if (!lat || !lng) {
-        speak(`Nu am găsit "${spokenAddress}" în Timișoara. Încearcă o adresă mai precisă.`);
+        speak(`Nu am găsit "${spokenAddress}". Încearcă o adresă sau un punct de reper mai precis.`, {
+          interrupt: true,
+        });
         setStatusMessage(`Adresă negăsită: "${spokenAddress}"`);
         setStatusType('error');
         return;
       }
 
       const resolvedName = place.displayName || place.name || spokenAddress;
-      setStatusMessage(`Destinație: ${resolvedName}`);
-      setStatusType('success');
-      speak(`Am setat destinația către ${resolvedName}. Calculez ruta accesibilă.`);
+      const shortName = formatShortPlaceName(resolvedName, spokenAddress);
 
-      if (onDestinationSet) onDestinationSet({ name: resolvedName, lat, lng });
+      setPendingDestination({ name: resolvedName, shortName, lat, lng });
+      setStatusMessage(`Confirmi destinația: ${shortName}?`);
+      setStatusType('info');
+
+      speak(
+        `Te îndrepți către ${shortName}? Spune Da pentru confirmare sau Nu pentru a anula.`,
+        {
+          interrupt: true,
+          onEnd: () => {
+            if (!alwaysOn) {
+              startListening();
+            }
+          },
+        }
+      );
     } catch (err) {
       console.error('Geocoding error:', err);
-      speak('Eroare de conexiune. Verifică internetul și încearcă din nou.');
+      speak('Eroare de conexiune. Verifică internetul și încearcă din nou.', { interrupt: true });
       setStatusMessage('Eroare de conexiune cu serverul');
       setStatusType('error');
     }
+  };
+
+  const confirmPendingDestination = () => {
+    if (!pendingDestination) return;
+    const dest = pendingDestination;
+    setPendingDestination(null);
+    setStatusMessage(`Destinație confirmată: ${dest.shortName}`);
+    setStatusType('success');
+    speak(`Perfect, calculez ruta către ${dest.shortName}.`, { interrupt: true });
+    if (onDestinationSet) {
+      onDestinationSet({ name: dest.name, shortName: dest.shortName, lat: dest.lat, lng: dest.lng });
+    }
+  };
+
+  const cancelPendingDestination = (newAddress = null) => {
+    setPendingDestination(null);
+    if (newAddress) {
+      handleDestinationRecognized(newAddress);
+      return;
+    }
+    setStatusMessage('Destinație anulată. Spune o altă destinație.');
+    setStatusType('info');
+    speak('Am anulat. Spune altă destinație când ești gata.', { interrupt: true });
+  };
+
+  const handleStatusQuery = () => {
+    if (!routeData) {
+      speak('Nu ai o rută activă momentan. Spune unde vrei să mergi.', { interrupt: true });
+      setStatusMessage('Nicio rută activă');
+      setStatusType('info');
+      return;
+    }
+    const dist = Math.round(routeData.distanceMeters || 0);
+    const mins = routeData.timeSeconds ? Math.max(1, Math.round(routeData.timeSeconds / 60)) : null;
+    const distText = dist >= 1000 ? `${(dist / 1000).toFixed(1)} kilometri` : `${dist} metri`;
+    const msg = mins
+      ? `Mai ai aproximativ ${distText}, circa ${mins} minute.`
+      : `Distanța rutei este de ${distText}.`;
+    setStatusMessage(msg);
+    setStatusType('info');
+    speak(msg, { interrupt: true });
   };
 
   const {
@@ -56,6 +125,9 @@ export default function VoiceButton({
     stopAlwaysOn,
   } = useVoiceAssistant({
     onDestinationRecognized: handleDestinationRecognized,
+    awaitingConfirmation: Boolean(pendingDestination),
+    onConfirmYes: confirmPendingDestination,
+    onConfirmNo: cancelPendingDestination,
     onEmergency: () => {
       setStatusMessage('Urgență 112 activată');
       setStatusType('error');
@@ -76,6 +148,13 @@ export default function VoiceButton({
       setStatusType('success');
       if (onStartNavigation) onStartNavigation();
     },
+    onCancelRoute: () => {
+      setPendingDestination(null);
+      setStatusMessage('Rută anulată');
+      setStatusType('info');
+      if (onCancelRoute) onCancelRoute();
+    },
+    onStatusQuery: handleStatusQuery,
     alwaysOn: false, // controlăm manual din UI
   });
 
@@ -95,13 +174,13 @@ export default function VoiceButton({
       setStatusMessage('Microfon oprit');
       setStatusType('info');
     } else {
-      speak('Asistent vocal activat. Poți spune comenzi oricând.');
-      setTimeout(() => {
-        startAlwaysOn();
-        setAlwaysOn(true);
-        setStatusMessage('Ascultare permanentă activă...');
-        setStatusType('success');
-      }, 1200);
+      setAlwaysOn(true);
+      setStatusMessage('Ascultare permanentă activă...');
+      setStatusType('success');
+      speak('Asistent vocal activat. Poți spune comenzi oricând.', {
+        interrupt: true,
+        onEnd: () => startAlwaysOn(),
+      });
     }
   };
 
@@ -114,8 +193,10 @@ export default function VoiceButton({
     }
     if (alwaysOn) return; // în always-on, butonul de o singură dată nu face nimic
     setStatusMessage('');
-    speak('Spune comanda.');
-    setTimeout(() => startListening(), 950);
+    speak('Spune comanda.', {
+      interrupt: true,
+      onEnd: () => startListening(),
+    });
   };
 
   // ── Stiluri ────────────────────────────────────────────────────────────
@@ -153,6 +234,67 @@ export default function VoiceButton({
         boxSizing: 'border-box',
       }}
     >
+      {/* ── Card confirmare destinație (Da / Nu prin voce sau atingere) ── */}
+      {pendingDestination && (
+        <div
+          style={{
+            background: '#0f172a',
+            color: '#f8fafc',
+            border: '1.5px solid #3b82f6',
+            borderRadius: 14,
+            padding: '10px 12px',
+            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.45)',
+            fontFamily: 'system-ui, sans-serif',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
+          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#93c5fd' }}>
+            Confirmi destinația?
+          </div>
+          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#ffffff' }}>
+            {pendingDestination.shortName}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={confirmPendingDestination}
+              style={{
+                flex: 1,
+                padding: '9px 10px',
+                borderRadius: 10,
+                border: 'none',
+                background: '#16a34a',
+                color: '#ffffff',
+                fontSize: '0.84rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              ✓ Da, pornește
+            </button>
+            <button
+              type="button"
+              onClick={() => cancelPendingDestination(null)}
+              style={{
+                flex: 1,
+                padding: '9px 10px',
+                borderRadius: 10,
+                border: '1px solid #475569',
+                background: '#1e293b',
+                color: '#e2e8f0',
+                fontSize: '0.84rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              ✕ Nu, anulează
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Buton principal o singură dată ── */}
       <button
         onClick={handlePressOnce}
