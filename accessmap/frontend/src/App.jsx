@@ -179,9 +179,8 @@ export default function App() {
       if (voiceGuidanceEnabled) {
         speechQueue.unlock();
         const dist = routeData.distanceMeters ? `${Math.round(routeData.distanceMeters)} metri` : '';
-        const mins = routeData.timeSeconds ? Math.max(1, Math.round(routeData.timeSeconds / 60)) : '';
-        const firstManeuver = steps[0]?.instructionRo || 'Porniți drept înainte pe traseu';
-        const msg = `Traseu pregătit, distanță ${dist}, aproximativ ${mins} minute. Am deschis camera pe tot ecranul pentru asistență și ghidare. ${firstManeuver}.`;
+        const firstManeuver = steps[0]?.shortRo || steps[0]?.instructionRo || 'Înainte';
+        const msg = `Traseu pornit, ${dist}. ${firstManeuver}.`;
         speechQueue.speak(msg, { priority: 'high' });
       }
     } else {
@@ -244,7 +243,7 @@ export default function App() {
       emitDetourAvailableEvent({
         detour: match.detour,
         distanceMeters: match.distanceMeters,
-        messageRo: `Atenție, obstacol raportat anterior la ${match.distanceMeters} metri. Urmează traseul de ocolire salvat.`,
+        messageRo: `Obstacol raportat la ${match.distanceMeters} metri. Urmează ocolirea.`,
         timestamp: Date.now(),
       });
     }

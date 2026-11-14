@@ -189,7 +189,7 @@ class SpeechQueueManager {
     if (!trimmed) return;
 
     const {
-      rate = 1.45,
+      rate = 1.2,
       pitch = 1.0,
       lang = 'ro-RO',
       interrupt = false,

@@ -221,10 +221,10 @@ export default function CameraObstacleDetector({
       if (isTilted) {
         const msg =
           reason === 'up'
-            ? 'Telefonul e înclinat prea în sus! Coboară-l ușor spre trotuar.'
+            ? 'Coboară telefonul.'
             : reason === 'down'
-              ? 'Telefonul e înclinat prea în jos! Ridică-l ușor spre înainte.'
-              : 'Telefonul e înclinat într-o parte! Ține-l drept spre trotuar.';
+              ? 'Ridică telefonul.'
+              : 'Ține telefonul drept.';
         setTiltMessage(msg);
 
         if (now - lastTiltVibrateRef.current >= TILT_VIBRATE_COOLDOWN_MS) {
@@ -254,7 +254,7 @@ export default function CameraObstacleDetector({
         // Dacă telefonul a fost înclinat și utilizatorul l-a readus în poziție corectă, oferim confirmare audio
         if (lastTiltSpokenRef.current.reason) {
           lastTiltSpokenRef.current = { reason: null, time: now };
-          speechQueue.speak('Poziție corectă a telefonului.', { priority: 'normal' });
+          speechQueue.speak('Poziție corectă.', { priority: 'normal' });
         }
       }
     };
@@ -751,7 +751,7 @@ export default function CameraObstacleDetector({
       drawOverlay([], sidewalk, 640, 480);
     }, 80);
     if (voiceEnabled !== false) {
-      speechQueue.speak('Mod Asistență Virtuală activat. Ghidarea audio pe traseu continuă.', { priority: 'normal' });
+      speechQueue.speak('Mod Asistent Virtual activ.', { priority: 'normal' });
     }
   }, [drawOverlay, voiceEnabled]);
 

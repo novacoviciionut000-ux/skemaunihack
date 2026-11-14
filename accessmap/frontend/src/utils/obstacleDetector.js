@@ -374,60 +374,58 @@ export function analyzeSidewalkPath(frameSample, obstacles = [], prevState = nul
 
   let action = 'straight';
   let safeZone = 'center';
-  let correctionRo = 'Traiectorie sigură pe trotuar — continuă înainte.';
-  let messageRo = 'Trotuar liber în față';
+  let correctionRo = 'Trotuar liber.';
+  let messageRo = 'Trotuar liber';
 
   if (status === 'edge_left') {
-    messageRo = 'Deviere spre marginea stângă a trotuarului';
+    messageRo = 'Deviere stânga';
     if (hasCloseRightObstacle) {
       if (!hasCloseCenterObstacle) {
         action = 'steer_center';
         safeZone = 'center';
-        const obsName = (rightObstacles[0]?.labelRo || 'obstacol').toLowerCase();
-        correctionRo = `Atenție: margine în stânga! Rămâi pe centru — ai ${obsName} în dreapta.`;
+        correctionRo = 'Margine stânga. Rămâi pe centru.';
       } else {
         action = 'stop';
         safeZone = 'none';
-        correctionRo = 'Oprește-te! Bordură în stânga și obstacol în față pe trotuar.';
+        correctionRo = 'Stop! Margine stânga, obstacol în față.';
       }
     } else {
       action = 'steer_right';
       safeZone = 'right';
-      correctionRo = 'Te abați spre marginea din stânga! Fă 2 pași spre dreapta pentru a rămâne pe trotuar.';
+      correctionRo = 'Margine stânga. Pas la dreapta.';
     }
   } else if (status === 'edge_right') {
-    messageRo = 'Deviere spre marginea dreaptă a trotuarului';
+    messageRo = 'Deviere dreapta';
     if (hasCloseLeftObstacle) {
       if (!hasCloseCenterObstacle) {
         action = 'steer_center';
         safeZone = 'center';
-        const obsName = (leftObstacles[0]?.labelRo || 'obstacol').toLowerCase();
-        correctionRo = `Atenție: margine în dreapta! Rămâi pe centru — ai ${obsName} în stânga.`;
+        correctionRo = 'Margine dreapta. Rămâi pe centru.';
       } else {
         action = 'stop';
         safeZone = 'none';
-        correctionRo = 'Oprește-te! Bordură în dreapta și obstacol în față pe trotuar.';
+        correctionRo = 'Stop! Margine dreapta, obstacol în față.';
       }
     } else {
       action = 'steer_left';
       safeZone = 'left';
-      correctionRo = 'Te abați spre marginea din dreapta! Fă 2 pași spre stânga pentru a rămâne pe trotuar.';
+      correctionRo = 'Margine dreapta. Pas la stânga.';
     }
   } else if (status === 'blocked' || hasCloseCenterObstacle) {
     const obsName = (centerObstacles[0]?.labelRo || 'obstacol').toLowerCase();
-    messageRo = `Obstacol pe trotuar în față: ${obsName}`;
+    messageRo = `Obstacol: ${obsName}`;
     if (!leftEdge && !hasCloseLeftObstacle) {
       action = 'bypass_left';
       safeZone = 'left';
-      correctionRo = `Atenție, ${obsName} în față! Ocolește ușor prin stânga, trotuarul continuă liber.`;
+      correctionRo = `${obsName} în față. Ocolește stânga.`;
     } else if (!rightEdge && !hasCloseRightObstacle) {
       action = 'bypass_right';
       safeZone = 'right';
-      correctionRo = `Atenție, ${obsName} în față! Ocolește ușor prin dreapta, trotuarul continuă liber.`;
+      correctionRo = `${obsName} în față. Ocolește dreapta.`;
     } else {
       action = 'stop';
       safeZone = 'none';
-      correctionRo = `Oprește-te! ${obsName.toUpperCase()} în față și trotuar îngust fără trecere sigură.`;
+      correctionRo = `Stop! ${obsName} în față.`;
     }
   }
 
@@ -640,20 +638,20 @@ export function analyzeDetections(
         severity = 'approaching';
       }
 
-      // Alert message in Romanian
-      let messageRo = `${labelRo} ${zoneRo} (~${distanceMeters}m)`;
+      // Alert message in Romanian (concise, clear, fast to speak)
+      let messageRo = `${labelRo} ${zoneRo}, ${distanceMeters} metri.`;
       if (p.class === 'traffic light') {
         if (trafficLightState === 'red') {
-          messageRo = `Semafor ROȘU ${zoneRo} — oprește!`;
+          messageRo = 'Semafor roșu. Oprește!';
         } else if (trafficLightState === 'yellow') {
-          messageRo = `Semafor GALBEN ${zoneRo} — atenție`;
+          messageRo = 'Semafor galben.';
         } else if (trafficLightState === 'green') {
-          messageRo = `Semafor VERDE ${zoneRo} — poți traversa`;
+          messageRo = 'Semafor verde. Liber.';
         }
       } else if (severity === 'danger') {
-        messageRo = `Pericol! ${labelRo} foarte aproape ${zoneRo} (~${distanceMeters}m) — ${threatReason || 'atenție'}`;
+        messageRo = `Atenție! ${labelRo} ${zoneRo}, ${distanceMeters} metri.`;
       } else if (severity === 'approaching') {
-        messageRo = `Atenție, ${threatReason.toLowerCase() || 'te apropii de'} ${labelRo.toLowerCase()} ${zoneRo} (~${distanceMeters}m)`;
+        messageRo = `${labelRo} ${zoneRo}, ${distanceMeters} metri.`;
       }
 
       const framesSeen = (prev?.framesSeen || 0) + 1;
