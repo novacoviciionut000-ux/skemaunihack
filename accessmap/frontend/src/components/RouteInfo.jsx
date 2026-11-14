@@ -25,22 +25,22 @@ export default function RouteInfo({
         background: 'white',
         padding: isMobile ? '12px 16px' : '14px 20px',
         borderRadius: 16,
-        boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
+        boxShadow: '0 8px 30px rgba(15, 23, 42, 0.12)',
         display: 'flex',
         alignItems: 'center',
         gap: 12,
-        fontFamily: "'Inter', system-ui, sans-serif",
+        fontFamily: 'inherit',
       }}>
         <div style={{
           width: 20,
           height: 20,
-          border: '3px solid #e5e7eb',
-          borderTopColor: '#2563eb',
+          border: '3px solid #E2E8F0',
+          borderTopColor: '#1D4ED8',
           borderRadius: '50%',
           animation: 'spin 1s linear infinite',
         }} />
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-        <span style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: '#334155' }}>
           Se calculează traseul accesibil...
         </span>
       </div>
@@ -55,19 +55,19 @@ export default function RouteInfo({
         right: isMobile ? 12 : 20,
         left: isMobile ? 12 : 'auto',
         zIndex: 1000,
-        background: '#fef2f2',
-        border: '1px solid #fecaca',
+        background: '#FEF2F2',
+        border: '1px solid #FECACA',
         padding: '12px 16px',
         borderRadius: 14,
-        boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
+        boxShadow: '0 8px 30px rgba(15, 23, 42, 0.08)',
         display: 'flex',
         alignItems: 'center',
         gap: 10,
         maxWidth: isMobile ? 'none' : 360,
-        fontFamily: "'Inter', system-ui, sans-serif",
+        fontFamily: 'inherit',
       }}>
-        <AlertCircle size={20} color="#dc2626" style={{ flexShrink: 0 }} />
-        <span style={{ fontSize: 13, color: '#991b1b', lineHeight: 1.4 }}>{error}</span>
+        <AlertCircle size={20} color="#B91C1C" style={{ flexShrink: 0 }} />
+        <span style={{ fontSize: 13, color: '#B91C1C', lineHeight: 1.4 }}>{error}</span>
         <button
           onClick={onClear}
           style={{
@@ -76,7 +76,7 @@ export default function RouteInfo({
             cursor: 'pointer',
             padding: 4,
             marginLeft: 'auto',
-            color: '#dc2626',
+            color: '#B91C1C',
           }}
         >
           <X size={16} />
@@ -109,14 +109,14 @@ export default function RouteInfo({
       zIndex: 1000,
       background: 'white',
       borderRadius: 16,
-      boxShadow: '0 10px 35px rgba(0,0,0,0.15)',
+      boxShadow: '0 10px 35px rgba(15, 23, 42, 0.15)',
       padding: isMobile ? '12px 16px' : '16px 20px',
       minWidth: isMobile ? 0 : 260,
-      fontFamily: "'Inter', system-ui, sans-serif",
-      border: '1px solid #e5e7eb',
+      fontFamily: 'inherit',
+      border: '1px solid #E2E8F0',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#16a34a' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#15803D' }}>
           <Eye size={18} />
           <span style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Traseu Asistiv Nevăzători
@@ -126,7 +126,7 @@ export default function RouteInfo({
           onClick={onClear}
           title="Închide traseul"
           style={{
-            background: '#f3f4f6',
+            background: '#F1F5F9',
             border: 'none',
             borderRadius: '50%',
             width: 24,
@@ -135,7 +135,7 @@ export default function RouteInfo({
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
-            color: '#6b7280',
+            color: '#64748B',
           }}
         >
           <X size={14} />
@@ -144,23 +144,23 @@ export default function RouteInfo({
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#6b7280', fontSize: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#64748B', fontSize: 12 }}>
             <Clock size={14} />
             <span>Timp estimat</span>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#111827', marginTop: 2 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', marginTop: 2 }}>
             {timeFormatted}
           </div>
         </div>
 
-        <div style={{ width: 1, height: 36, background: '#e5e7eb' }} />
+        <div style={{ width: 1, height: 36, background: '#E2E8F0' }} />
 
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#6b7280', fontSize: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#64748B', fontSize: 12 }}>
             <Navigation size={14} />
             <span>Distanță</span>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#111827', marginTop: 2 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', marginTop: 2 }}>
             {distFormatted}
           </div>
         </div>
@@ -174,8 +174,8 @@ export default function RouteInfo({
             marginTop: 12,
             width: '100%',
             padding: '10px 16px',
-            background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-            color: '#ffffff',
+            background: 'linear-gradient(135deg, #1D4ED8 0%, #1D4ED8 100%)',
+            color: '#FFFFFF',
             border: 'none',
             borderRadius: 12,
             fontSize: 13.5,
@@ -185,7 +185,7 @@ export default function RouteInfo({
             alignItems: 'center',
             justifyContent: 'center',
             gap: 8,
-            boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)',
+            boxShadow: '0 4px 14px rgba(29, 78, 216, 0.35)',
             transition: 'all 0.15s ease',
           }}
         >
@@ -198,15 +198,15 @@ export default function RouteInfo({
         <div style={{
           marginTop: 10,
           padding: '6px 10px',
-          background: '#fef3c7',
+          background: '#FFFBEB',
           borderRadius: 8,
           fontSize: 11,
-          color: '#92400e',
+          color: '#B45309',
           display: 'flex',
           alignItems: 'center',
           gap: 6,
         }}>
-          <AlertTriangle size={13} color="#92400e" />
+          <AlertTriangle size={13} color="#B45309" />
           <span>Traseu estimat preview</span>
         </div>
       )}

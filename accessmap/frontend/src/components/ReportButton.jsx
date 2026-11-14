@@ -20,12 +20,12 @@ import { submitReport } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 const OBSTACLE_TYPES = [
-  { id: 'BLOCKED_SIDEWALK', label: 'Trotuar blocat / barieră', icon: Ban, color: '#dc2626' },
-  { id: 'NO_RAMP', label: 'Trepte fără rampă de acces', icon: ArrowDownUp, color: '#ea580c' },
-  { id: 'BROKEN_ELEVATOR', label: 'Lift / elevator defect', icon: Construction, color: '#ca8a04' },
-  { id: 'POTHOLE', label: 'Groapă / pavaj distrus', icon: AlertOctagon, color: '#d97706' },
-  { id: 'CONSTRUCTION', label: 'Zonă de șantier / lucrări', icon: Hammer, color: '#b91c1c' },
-  { id: 'OTHER', label: 'Alt obstacol', icon: HelpCircle, color: '#6b7280' },
+  { id: 'BLOCKED_SIDEWALK', label: 'Trotuar blocat / barieră', icon: Ban, color: '#B91C1C' },
+  { id: 'NO_RAMP', label: 'Trepte fără rampă de acces', icon: ArrowDownUp, color: '#B45309' },
+  { id: 'BROKEN_ELEVATOR', label: 'Lift / elevator defect', icon: Construction, color: '#B45309' },
+  { id: 'POTHOLE', label: 'Groapă / pavaj distrus', icon: AlertOctagon, color: '#B45309' },
+  { id: 'CONSTRUCTION', label: 'Zonă de șantier / lucrări', icon: Hammer, color: '#B91C1C' },
+  { id: 'OTHER', label: 'Alt obstacol', icon: HelpCircle, color: '#64748B' },
 ];
 
 export default function ReportButton({ onReportAdded, userLocation, onRequestLocate }) {
@@ -106,7 +106,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
 
       setShowModal(false);
       setDescription('');
-      setToast(`✓ Obstacolul (${selectedType}) a fost plasat pe hartă!`);
+      setToast(`Obstacolul (${selectedType}) a fost plasat pe hartă!`);
       setTimeout(() => setToast(''), 4500);
     } catch (err) {
       console.error('Failed to submit report:', err);
@@ -122,7 +122,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
         });
       }
       setShowModal(false);
-      setToast('✓ Obstacolul a fost plasat pe hartă!');
+      setToast('Obstacolul a fost plasat pe hartă!');
       setTimeout(() => setToast(''), 4500);
     } finally {
       setIsSubmitting(false);
@@ -138,7 +138,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
         style={{
           flex: 1,
           padding: '12px 18px',
-          background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+          background: 'linear-gradient(135deg, #B91C1C 0%, #B91C1C 100%)',
           color: 'white',
           borderRadius: 12,
           border: 'none',
@@ -149,7 +149,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
           alignItems: 'center',
           gap: 8,
           cursor: 'pointer',
-          boxShadow: '0 4px 14px rgba(220, 38, 38, 0.3)',
+          boxShadow: '0 4px 14px rgba(185, 28, 28, 0.3)',
           fontFamily: 'inherit',
           transition: 'all 0.15s ease',
         }}
@@ -165,18 +165,18 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
           top: 24,
           left: '50%',
           transform: 'translateX(-50%)',
-          background: '#15803d',
+          background: '#15803D',
           color: 'white',
           padding: '12px 24px',
           borderRadius: 14,
-          boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+          boxShadow: '0 10px 30px rgba(15, 23, 42, 0.25)',
           zIndex: 999999,
           fontSize: 14,
           fontWeight: 600,
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          fontFamily: 'system-ui, sans-serif',
+          fontFamily: 'inherit',
         }}>
           <Check size={18} />
           {toast}
@@ -192,7 +192,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
             inset: 0,
             width: '100vw',
             height: '100vh',
-            background: 'rgba(0,0,0,0.6)',
+            background: 'rgba(15, 23, 42, 0.6)',
             backdropFilter: 'blur(5px)',
             zIndex: 99999,
             display: 'flex',
@@ -216,8 +216,8 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
               maxWidth: 440,
               maxHeight: '90vh',
               overflowY: 'auto',
-              boxShadow: '0 25px 60px rgba(0,0,0,0.35)',
-              fontFamily: "'Inter', system-ui, sans-serif",
+              boxShadow: '0 25px 60px rgba(15, 23, 42, 0.35)',
+              fontFamily: 'inherit',
               display: 'flex',
               flexDirection: 'column',
               boxSizing: 'border-box',
@@ -226,9 +226,9 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
           >
             {/* Modal Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#dc2626' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#B91C1C' }}>
                 <AlertTriangle size={22} />
-                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#111827' }}>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0F172A' }}>
                   Raportează obstacol
                 </h3>
               </div>
@@ -236,7 +236,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                 type="button"
                 onClick={() => setShowModal(false)}
                 style={{
-                  background: '#f3f4f6',
+                  background: '#F1F5F9',
                   border: 'none',
                   borderRadius: '50%',
                   width: 32,
@@ -245,7 +245,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  color: '#6b7280',
+                  color: '#64748B',
                 }}
               >
                 <X size={18} />
@@ -258,11 +258,11 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                 alignItems: 'center',
                 gap: 6,
                 padding: '6px 12px',
-                backgroundColor: '#eff6ff',
-                border: '1px solid #dbeafe',
+                backgroundColor: '#EFF6FF',
+                border: '1px solid #EFF6FF',
                 borderRadius: 10,
                 fontSize: 12,
-                color: '#1d4ed8',
+                color: '#1D4ED8',
                 marginBottom: 12,
                 fontWeight: 500
               }}>
@@ -275,8 +275,8 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
 
             {/* GPS Location Status Bar */}
             <div style={{
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
+              background: '#F8FAFC',
+              border: '1px solid #E2E8F0',
               borderRadius: 12,
               padding: '10px 14px',
               marginBottom: 14,
@@ -285,18 +285,18 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
               justifyContent: 'space-between',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Crosshair size={18} color="#2563eb" />
+                <Crosshair size={18} color="#1D4ED8" />
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#64748B' }}>
                     Locația ta detectată:
                   </div>
                   {isLocating ? (
-                    <div style={{ fontSize: 12, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontSize: 12, color: '#1D4ED8', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
                       Detectare semnal GPS...
                     </div>
                   ) : detectedCoords ? (
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#15803d', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#15803D', display: 'flex', alignItems: 'center', gap: 4 }}>
                       <MapPin size={14} />
                       {detectedCoords.lat.toFixed(5)}, {detectedCoords.lng.toFixed(5)}
                     </div>
@@ -311,7 +311,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                 onClick={fetchUserLocation}
                 style={{
                   background: 'white',
-                  border: '1px solid #cbd5e1',
+                  border: '1px solid #CBD5E1',
                   borderRadius: 8,
                   padding: '5px 10px',
                   cursor: 'pointer',
@@ -327,7 +327,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
             <form onSubmit={handleFinishReport} style={{ display: 'flex', flexDirection: 'column' }}>
               {/* Type Selection */}
               <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 8 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 8 }}>
                   1. Alege tipul obstacolului:
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -345,20 +345,20 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                           gap: 8,
                           padding: '10px 12px',
                           borderRadius: 12,
-                          border: isSelected ? `2px solid ${t.color}` : '2px solid #e2e8f0',
-                          background: isSelected ? '#fef2f2' : '#f8fafc',
+                          border: isSelected ? `2px solid ${t.color}` : '2px solid #E2E8F0',
+                          background: isSelected ? '#FEF2F2' : '#F8FAFC',
                           cursor: 'pointer',
                           textAlign: 'left',
                           fontFamily: 'inherit',
                           transition: 'all 0.1s ease',
-                          boxShadow: isSelected ? '0 2px 8px rgba(220,38,38,0.15)' : 'none',
+                          boxShadow: isSelected ? '0 2px 8px rgba(185, 28, 28, 0.15)' : 'none',
                         }}
                       >
                         <Icon size={16} color={t.color} style={{ flexShrink: 0 }} />
                         <span style={{
                           fontSize: 12,
                           fontWeight: isSelected ? 800 : 600,
-                          color: isSelected ? '#991b1b' : '#334155',
+                          color: isSelected ? '#B91C1C' : '#334155',
                           lineHeight: 1.2,
                         }}>
                           {t.label}
@@ -371,7 +371,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
 
               {/* Description Input */}
               <div style={{ marginBottom: 18 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 6 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
                   2. Detalii (opțional):
                 </label>
                 <input
@@ -383,7 +383,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                     width: '100%',
                     padding: '10px 12px',
                     borderRadius: 10,
-                    border: '2px solid #e2e8f0',
+                    border: '2px solid #E2E8F0',
                     fontSize: 13,
                     outline: 'none',
                     fontFamily: 'inherit',
@@ -407,8 +407,8 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                     flex: 1,
                     padding: '13px',
                     borderRadius: 12,
-                    border: '1px solid #cbd5e1',
-                    background: '#f8fafc',
+                    border: '1px solid #CBD5E1',
+                    background: '#F8FAFC',
                     color: '#475569',
                     fontSize: 14,
                     fontWeight: 600,
@@ -426,7 +426,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                     padding: '13px 16px',
                     borderRadius: 12,
                     border: 'none',
-                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                    background: 'linear-gradient(135deg, #B91C1C 0%, #B91C1C 100%)',
                     color: 'white',
                     fontSize: 15,
                     fontWeight: 800,
@@ -435,7 +435,7 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: 8,
-                    boxShadow: '0 6px 16px rgba(220, 38, 38, 0.35)',
+                    boxShadow: '0 6px 16px rgba(185, 28, 28, 0.35)',
                     transition: 'all 0.15s ease',
                   }}
                 >

@@ -81,12 +81,12 @@ export function createUserPuckIcon(heading = null) {
 
 export function renderMapStyleIcon(iconType, size = 17) {
   switch (iconType) {
-    case 'satellite': return <Globe size={size} color="#0284c7" />;
-    case 'accessibility': return <Eye size={size} color="#16a34a" />;
-    case 'topo': return <Mountain size={size} color="#d97706" />;
-    case 'contrast': return <Contrast size={size} color="#7c3aed" />;
+    case 'satellite': return <Globe size={size} color="#1D4ED8" />;
+    case 'accessibility': return <Eye size={size} color="#15803D" />;
+    case 'topo': return <Mountain size={size} color="#B45309" />;
+    case 'contrast': return <Contrast size={size} color="#1D4ED8" />;
     case 'map':
-    default: return <MapIcon size={size} color="#2563eb" />;
+    default: return <MapIcon size={size} color="#1D4ED8" />;
   }
 }
 
@@ -205,7 +205,7 @@ function DraggableMarker({ position, icon, popupText, onDragEnd }) {
       <Popup>
         <strong>{popupText}</strong>
         <br />
-        <small style={{ color: '#666' }}>Trage pentru a muta pinul</small>
+        <small style={{ color: '#64748B' }}>Trage pentru a muta pinul</small>
       </Popup>
     </Marker>
   );
@@ -241,29 +241,29 @@ export default function Map({
         top: isMobile ? 12 : 20,
         left: isMobile ? 12 : 20,
         zIndex: 1002,
-        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+        fontFamily: 'inherit',
       }}>
         <button
           onClick={() => setShowStyleMenu(!showStyleMenu)}
           style={{
             background: 'white',
-            border: '1px solid #e5e7eb',
+            border: '1px solid #E2E8F0',
             borderRadius: isMobile ? 30 : 14,
             padding: isMobile ? '8px 12px' : '10px 14px',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            boxShadow: '0 4px 16px rgba(15, 23, 42, 0.12)',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: isMobile ? 6 : 8,
             fontSize: isMobile ? 12.5 : 13,
             fontWeight: 700,
-            color: '#1f2937',
+            color: '#1E293B',
             transition: 'all 0.15s ease',
             whiteSpace: 'nowrap',
           }}
           title="Schimbă stilul hărții"
         >
-          <Layers size={isMobile ? 15 : 18} color="#2563eb" />
+          <Layers size={isMobile ? 15 : 18} color="#1D4ED8" />
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {renderMapStyleIcon(currentTileConfig.iconType, 16)}
             <span>{isMobile ? 'Hartă' : currentTileConfig.name}</span>
@@ -276,17 +276,17 @@ export default function Map({
             top: 'calc(100% + 8px)',
             left: 0,
             background: 'white',
-            border: '1px solid #e5e7eb',
+            border: '1px solid #E2E8F0',
             borderRadius: 16,
             padding: 8,
-            boxShadow: '0 12px 30px rgba(0,0,0,0.18)',
+            boxShadow: '0 12px 30px rgba(15, 23, 42, 0.18)',
             display: 'flex',
             flexDirection: 'column',
             gap: 4,
             minWidth: 230,
             animation: 'fadeIn 0.15s ease-out',
           }}>
-            <div style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <div style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               Selectează stilul hărții
             </div>
             {Object.values(MAP_STYLES).map((style) => {
@@ -305,15 +305,15 @@ export default function Map({
                     padding: '8px 12px',
                     borderRadius: 10,
                     border: 'none',
-                    background: isSelected ? '#eff6ff' : 'transparent',
-                    color: isSelected ? '#1d4ed8' : '#374151',
+                    background: isSelected ? '#EFF6FF' : 'transparent',
+                    color: isSelected ? '#1D4ED8' : '#334155',
                     cursor: 'pointer',
                     textAlign: 'left',
                     fontFamily: 'inherit',
                     transition: 'background 0.1s ease',
                   }}
                   onMouseEnter={(e) => {
-                    if (!isSelected) e.currentTarget.style.background = '#f9fafb';
+                    if (!isSelected) e.currentTarget.style.background = '#F8FAFC';
                   }}
                   onMouseLeave={(e) => {
                     if (!isSelected) e.currentTarget.style.background = 'transparent';
@@ -324,7 +324,7 @@ export default function Map({
                       width: 28,
                       height: 28,
                       borderRadius: 8,
-                      background: isSelected ? '#dbeafe' : '#f1f5f9',
+                      background: isSelected ? '#EFF6FF' : '#F1F5F9',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -333,10 +333,10 @@ export default function Map({
                     </div>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: isSelected ? 700 : 600 }}>{style.name}</div>
-                      <div style={{ fontSize: 10, color: isSelected ? '#3b82f6' : '#9ca3af' }}>{style.subtitle}</div>
+                      <div style={{ fontSize: 10, color: isSelected ? '#1D4ED8' : '#94A3B8' }}>{style.subtitle}</div>
                     </div>
                   </div>
-                  {isSelected && <Check size={16} color="#2563eb" />}
+                  {isSelected && <Check size={16} color="#1D4ED8" />}
                 </button>
               );
             })}
@@ -354,24 +354,24 @@ export default function Map({
           right: 12,
           zIndex: 998,
           background: 'white',
-          border: '1px solid #e2e8f0',
+          border: '1px solid #E2E8F0',
           borderRadius: 12,
           width: 44,
           height: 44,
-          boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+          boxShadow: '0 4px 14px rgba(15, 23, 42, 0.18)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           cursor: isLocating ? 'wait' : 'pointer',
-          color: userLocation ? '#2563eb' : '#334155',
+          color: userLocation ? '#1D4ED8' : '#334155',
           transition: 'all 0.15s ease',
         }}
         title="Centrează pe locația mea"
       >
         {isLocating ? (
-          <Loader2 size={20} color="#2563eb" style={{ animation: 'spin 1s linear infinite' }} />
+          <Loader2 size={20} color="#1D4ED8" style={{ animation: 'spin 1s linear infinite' }} />
         ) : (
-          <Crosshair size={22} color={userLocation ? '#2563eb' : '#334155'} />
+          <Crosshair size={22} color={userLocation ? '#1D4ED8' : '#334155'} />
         )}
       </button>
 
@@ -401,8 +401,8 @@ export default function Map({
               center={[userLocation.lat, userLocation.lng]}
               radius={userLocation.accuracy ? Math.min(Math.max(userLocation.accuracy, 15), 60) : 25}
               pathOptions={{
-                color: '#2563eb',
-                fillColor: '#3b82f6',
+                color: '#1D4ED8',
+                fillColor: '#1D4ED8',
                 fillOpacity: 0.12,
                 weight: 1.5,
               }}
@@ -412,20 +412,20 @@ export default function Map({
               icon={createUserPuckIcon(userLocation.heading)}
             >
               <Popup>
-                <div style={{ fontFamily: 'system-ui, sans-serif', padding: 2 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#1e40af', marginBottom: 2 }}>
+                <div style={{ fontFamily: 'inherit', padding: 2 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#1E40AF', marginBottom: 2 }}>
                     Poziția ta (GPS Live)
                   </div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, color: '#64748B', marginBottom: 4 }}>
                     [{userLocation.lat.toFixed(5)}, {userLocation.lng.toFixed(5)}]
                   </div>
                   {userLocation.heading != null && (
-                    <div style={{ fontSize: 11, color: '#0369a1', fontWeight: 600, marginBottom: 4 }}>
+                    <div style={{ fontSize: 11, color: '#1D4ED8', fontWeight: 600, marginBottom: 4 }}>
                       Direcție de deplasare: {Math.round(userLocation.heading)}°
                     </div>
                   )}
                   {userLocation.speed != null && userLocation.speed > 0 && (
-                    <div style={{ fontSize: 11, color: '#047857', fontWeight: 600, marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, color: '#15803D', fontWeight: 600, marginBottom: 6 }}>
                       Viteză de mers: {(userLocation.speed * 3.6).toFixed(1)} km/h
                     </div>
                   )}
@@ -433,7 +433,7 @@ export default function Map({
                     <button
                       onClick={() => onUseAsStart({ lat: userLocation.lat, lng: userLocation.lng })}
                       style={{
-                        background: '#2563eb',
+                        background: '#1D4ED8',
                         color: 'white',
                         border: 'none',
                         borderRadius: 8,
@@ -488,7 +488,7 @@ export default function Map({
             {/* Outline / shadow line */}
             <Polyline
               positions={routeData.coordinates}
-              color={activeStyle === 'satellite' ? '#ffffff' : '#1e3a5f'}
+              color={activeStyle === 'satellite' ? '#FFFFFF' : '#1E293B'}
               weight={9}
               opacity={activeStyle === 'satellite' ? 0.7 : 0.3}
               lineCap="round"
@@ -497,7 +497,7 @@ export default function Map({
             {/* Vibrant primary line */}
             <Polyline
               positions={routeData.coordinates}
-              color="#2563eb"
+              color="#1D4ED8"
               weight={5}
               opacity={1.0}
               lineCap="round"
@@ -516,8 +516,8 @@ export default function Map({
                   center={[detour.obstacleCoords.lat, detour.obstacleCoords.lng]}
                   radius={5}
                   pathOptions={{
-                    color: '#ef4444',
-                    fillColor: '#ef4444',
+                    color: '#B91C1C',
+                    fillColor: '#B91C1C',
                     fillOpacity: 0.25,
                     weight: 2,
                   }}
@@ -531,7 +531,7 @@ export default function Map({
                 <Polyline
                   positions={detour.detourPath}
                   pathOptions={{
-                    color: isNearby ? '#10b981' : '#22c55e',
+                    color: isNearby ? '#15803D' : '#15803D',
                     weight: isNearby ? 6 : 4,
                     opacity: isNearby ? 0.95 : 0.75,
                     dashArray: '8, 8',

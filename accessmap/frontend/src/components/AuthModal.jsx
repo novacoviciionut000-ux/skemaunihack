@@ -6,16 +6,13 @@ import {
   User,
   Eye,
   EyeOff,
-  ShieldCheck,
   AlertCircle,
   CheckCircle2,
   Loader2,
   Accessibility,
   ArrowRight,
-  Sparkles,
   ChevronRight,
-  ExternalLink,
-  Smartphone
+  ExternalLink
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authGetOAuthConfig } from '../api/client';
@@ -150,7 +147,8 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
             text: 'continue_with',
             size: 'large',
             logo_alignment: 'left',
-            width: 380,
+            // Google's button has a fixed pixel width; 380 overflowed the dialog on phones
+            width: Math.max(200, Math.min(400, Math.floor(container.clientWidth || 320))),
           });
 
           // Google inserts its button asynchronously, so the container is still empty on
@@ -426,7 +424,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
 
   // Calcul putere parolă
   const calculatePasswordStrength = (pass) => {
-    if (!pass) return { score: 0, text: '', color: '#e5e7eb' };
+    if (!pass) return { score: 0, text: '', color: '#E2E8F0' };
     let score = 0;
     if (pass.length >= 8) score += 1;
     if (/[A-Z]/.test(pass) && /[a-z]/.test(pass)) score += 1;
@@ -435,15 +433,15 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
 
     switch (score) {
       case 1:
-        return { score: 25, text: 'Slabă', color: '#ef4444' };
+        return { score: 25, text: 'Slabă', color: '#B91C1C' };
       case 2:
-        return { score: 50, text: 'Medie', color: '#f59e0b' };
+        return { score: 50, text: 'Medie', color: '#B45309' };
       case 3:
-        return { score: 75, text: 'Bună', color: '#3b82f6' };
+        return { score: 75, text: 'Bună', color: '#1D4ED8' };
       case 4:
-        return { score: 100, text: 'Foarte sigură', color: '#10b981' };
+        return { score: 100, text: 'Foarte sigură', color: '#15803D' };
       default:
-        return { score: 10, text: 'Prea scurtă', color: '#ef4444' };
+        return { score: 10, text: 'Prea scurtă', color: '#B91C1C' };
     }
   };
 
@@ -533,7 +531,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
         backdropFilter: 'blur(8px)',
         padding: '16px',
         animation: 'fadeIn 0.2s ease-out',
-        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+        fontFamily: 'inherit',
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -564,11 +562,11 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
             style={{
               width: '100%',
               maxWidth: 380,
-              background: '#ffffff',
+              background: '#FFFFFF',
               borderRadius: 18,
               padding: '20px 22px',
-              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
-              fontFamily: "'Inter', system-ui, sans-serif",
+              boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.4)',
+              fontFamily: 'inherit',
             }}
           >
             <div
@@ -576,7 +574,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 display: 'flex',
                 alignItems: 'center',
                 gap: 10,
-                color: '#b91c1c',
+                color: '#B91C1C',
                 fontWeight: 800,
                 fontSize: 15,
                 marginBottom: 8,
@@ -597,8 +595,8 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 padding: '11px 16px',
                 borderRadius: 10,
                 border: 'none',
-                background: '#2563eb',
-                color: '#ffffff',
+                background: '#1D4ED8',
+                color: '#FFFFFF',
                 fontSize: 14,
                 fontWeight: 700,
                 cursor: 'pointer',
@@ -617,9 +615,9 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
         style={{
           width: '100%',
           maxWidth: 480,
-          backgroundColor: '#ffffff',
+          backgroundColor: '#FFFFFF',
           borderRadius: 24,
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
+          boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(15, 23, 42, 0.05)',
           overflow: 'hidden',
           position: 'relative',
           maxHeight: '94vh',
@@ -633,22 +631,22 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
           display: 'flex',
           alignItems: 'flex-start',
           justifyContent: 'space-between',
-          borderBottom: '1px solid #f1f5f9',
+          borderBottom: '1px solid #F1F5F9',
           flexShrink: 0
         }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <div style={{
-                width: 32, height: 32, borderRadius: 10, backgroundColor: '#eff6ff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb'
+                width: 32, height: 32, borderRadius: 10, backgroundColor: '#EFF6FF',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1D4ED8'
               }}>
                 <Accessibility size={20} />
               </div>
-              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0f172a' }}>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0F172A' }}>
                 AccessMap
               </h2>
             </div>
-            <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+            <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
               {mode === 'login'
                 ? 'Conectează-te pentru navigație personalizată și securitate cont'
                 : 'Creează un cont securizat cu unicitate garantată a utilizatorilor'}
@@ -659,7 +657,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
             onClick={onClose}
             aria-label="Închide fereastra"
             style={{
-              background: '#f8fafc',
+              background: '#F8FAFC',
               border: 'none',
               borderRadius: '50%',
               width: 32,
@@ -668,7 +666,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              color: '#64748b',
+              color: '#64748B',
               transition: 'background 0.2s',
             }}
           >
@@ -684,8 +682,8 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
             {error && (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10,
-                backgroundColor: '#fef2f2', border: '1px solid #fee2e2',
-                color: '#b91c1c', padding: '10px 14px', borderRadius: 10,
+                backgroundColor: '#FEF2F2', border: '1px solid #FEF2F2',
+                color: '#B91C1C', padding: '10px 14px', borderRadius: 10,
                 fontSize: 13, lineHeight: '1.4', marginBottom: 10
               }}>
                 <AlertCircle size={18} style={{ flexShrink: 0 }} />
@@ -696,8 +694,8 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
             {success && (
               <div style={{
                 display: 'flex', flexDirection: 'column', gap: 4,
-                backgroundColor: '#f0fdf4', border: '1px solid #dcfce7',
-                color: '#15803d', padding: '10px 14px', borderRadius: 10,
+                backgroundColor: '#F0FDF4', border: '1px solid #F0FDF4',
+                color: '#15803D', padding: '10px 14px', borderRadius: 10,
                 fontSize: 13, lineHeight: '1.4', marginBottom: 10
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}>
@@ -705,7 +703,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                   <span>{success}</span>
                 </div>
                 {emailSentInfo && (
-                  <div style={{ fontSize: 12, color: '#166534', paddingLeft: 26, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ fontSize: 12, color: '#15803D', paddingLeft: 26, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Mail size={13} />
                     <span>Confirmare expediată la: <strong>{emailSentInfo.recipient}</strong> ({emailSentInfo.note})</span>
                   </div>
@@ -716,19 +714,6 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
 
           {/* Secțiune Conectare Reală cu Google */}
           <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              fontSize: 12,
-              fontWeight: 600,
-              color: '#475569'
-            }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Sparkles size={14} color="#ea4335" />
-                <span>Autentificare Oficială Google</span>
-              </span>
-            </div>
-
             {/* Container Buton Oficial Google Identity Services */}
             <div
               ref={googleButtonRef}
@@ -747,9 +732,9 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                   marginTop: 8,
                   padding: '8px 10px',
                   borderRadius: 8,
-                  background: '#fef3c7',
-                  border: '1px solid #fcd34d',
-                  color: '#78350f',
+                  background: '#FFFBEB',
+                  border: '1px solid #FCD34D',
+                  color: '#B45309',
                   fontSize: 11.5,
                   lineHeight: 1.5,
                 }}
@@ -775,27 +760,27 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 justifyContent: 'center',
                 gap: 12,
                 padding: '12px 18px',
-                backgroundColor: '#ffffff',
-                border: '1.5px solid #cbd5e1',
+                backgroundColor: '#FFFFFF',
+                border: '1.5px solid #CBD5E1',
                 borderRadius: 14,
                 fontSize: 14,
                 fontWeight: 600,
-                color: '#0f172a',
+                color: '#0F172A',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+                boxShadow: '0 2px 6px rgba(15, 23, 42, 0.04)',
               }}
               onMouseOver={(e) => {
-                e.currentTarget.style.borderColor = '#ea4335';
-                e.currentTarget.style.backgroundColor = '#fef2f2';
+                e.currentTarget.style.borderColor = '#B91C1C';
+                e.currentTarget.style.backgroundColor = '#FEF2F2';
               }}
               onMouseOut={(e) => {
-                e.currentTarget.style.borderColor = '#cbd5e1';
-                e.currentTarget.style.backgroundColor = '#ffffff';
+                e.currentTarget.style.borderColor = '#CBD5E1';
+                e.currentTarget.style.backgroundColor = '#FFFFFF';
               }}
             >
               {socialLoading === 'google' ? (
-                <Loader2 size={18} className="animate-spin" color="#ea4335" />
+                <Loader2 size={18} className="animate-spin" color="#B91C1C" />
               ) : (
                 <svg width="20" height="20" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -812,22 +797,6 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
             </button>
             )}
 
-            {/* Informare despre verificarea existenței conturilor Google */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 12px',
-              backgroundColor: '#f8fafc',
-              borderRadius: 10,
-              fontSize: 11.5,
-              color: '#64748b'
-            }}>
-              <Smartphone size={16} color="#059669" style={{ flexShrink: 0 }} />
-              <span>
-                Verificare Google autentică: sistemul solicită conturile reale salvate pe telefon/browser. Dacă un cont nu există, Google îl respinge automat.
-              </span>
-            </div>
           </div>
 
           {/* Separator */}
@@ -836,22 +805,22 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
             alignItems: 'center',
             gap: 12,
             marginTop: 18,
-            color: '#94a3b8',
+            color: '#94A3B8',
             fontSize: 12,
             textTransform: 'uppercase',
             letterSpacing: 0.5,
             fontWeight: 600
           }}>
-            <div style={{ flex: 1, height: 1, backgroundColor: '#e2e8f0' }} />
+            <div style={{ flex: 1, height: 1, backgroundColor: '#E2E8F0' }} />
             <span>sau cu utilizator și parolă</span>
-            <div style={{ flex: 1, height: 1, backgroundColor: '#e2e8f0' }} />
+            <div style={{ flex: 1, height: 1, backgroundColor: '#E2E8F0' }} />
           </div>
 
           {/* Switcher Tab: Conectare / Înregistrare */}
           <div style={{ marginTop: 14 }}>
             <div style={{
               display: 'flex',
-              backgroundColor: '#f1f5f9',
+              backgroundColor: '#F1F5F9',
               borderRadius: 12,
               padding: 4,
               gap: 4
@@ -867,9 +836,9 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                   fontSize: 13.5,
                   fontWeight: 600,
                   cursor: 'pointer',
-                  backgroundColor: mode === 'login' ? '#ffffff' : 'transparent',
-                  color: mode === 'login' ? '#0f172a' : '#64748b',
-                  boxShadow: mode === 'login' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                  backgroundColor: mode === 'login' ? '#FFFFFF' : 'transparent',
+                  color: mode === 'login' ? '#0F172A' : '#64748B',
+                  boxShadow: mode === 'login' ? '0 2px 6px rgba(15, 23, 42, 0.06)' : 'none',
                   transition: 'all 0.2s ease',
                 }}
               >
@@ -886,9 +855,9 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                   fontSize: 13.5,
                   fontWeight: 600,
                   cursor: 'pointer',
-                  backgroundColor: mode === 'register' ? '#ffffff' : 'transparent',
-                  color: mode === 'register' ? '#0f172a' : '#64748b',
-                  boxShadow: mode === 'register' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                  backgroundColor: mode === 'register' ? '#FFFFFF' : 'transparent',
+                  color: mode === 'register' ? '#0F172A' : '#64748B',
+                  boxShadow: mode === 'register' ? '0 2px 6px rgba(15, 23, 42, 0.06)' : 'none',
                   transition: 'all 0.2s ease',
                 }}
               >
@@ -907,7 +876,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                     Utilizator sau Email
                   </label>
                   <div style={{ position: 'relative' }}>
-                    <User size={18} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                    <User size={18} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
                     <input
                       type="text"
                       required
@@ -919,10 +888,10 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                         width: '100%',
                         padding: '11px 14px 11px 42px',
                         borderRadius: 12,
-                        border: '1.5px solid #cbd5e1',
+                        border: '1.5px solid #CBD5E1',
                         fontSize: 14,
-                        color: '#0f172a',
-                        backgroundColor: '#ffffff',
+                        color: '#0F172A',
+                        backgroundColor: '#FFFFFF',
                         outline: 'none',
                         fontFamily: 'inherit',
                         boxSizing: 'border-box'
@@ -937,7 +906,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                     Parolă
                   </label>
                   <div style={{ position: 'relative' }}>
-                    <Lock size={18} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                    <Lock size={18} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
@@ -948,10 +917,10 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                         width: '100%',
                         padding: '11px 42px 11px 42px',
                         borderRadius: 12,
-                        border: '1.5px solid #cbd5e1',
+                        border: '1.5px solid #CBD5E1',
                         fontSize: 14,
-                        color: '#0f172a',
-                        backgroundColor: '#ffffff',
+                        color: '#0F172A',
+                        backgroundColor: '#FFFFFF',
                         outline: 'none',
                         fontFamily: 'inherit',
                         boxSizing: 'border-box'
@@ -968,7 +937,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                         transform: 'translateY(-50%)',
                         background: 'none',
                         border: 'none',
-                        color: '#94a3b8',
+                        color: '#94A3B8',
                         cursor: 'pointer',
                         padding: 4
                       }}
@@ -997,16 +966,16 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                         padding: '9px 12px',
                         borderRadius: 10,
                         border: usernameStatus === 'available'
-                          ? '1.5px solid #16a34a'
+                          ? '1.5px solid #15803D'
                           : usernameStatus === 'taken'
-                          ? '1.5px solid #ef4444'
+                          ? '1.5px solid #B91C1C'
                           : usernameStatus === 'invalid'
-                          ? '1.5px solid #f59e0b'
-                          : '1.5px solid #cbd5e1',
+                          ? '1.5px solid #B45309'
+                          : '1.5px solid #CBD5E1',
                         fontSize: 13,
                         fontFamily: 'inherit',
                         outline: 'none',
-                        backgroundColor: usernameStatus === 'available' ? '#f0fdf4' : (usernameStatus === 'taken' ? '#fef2f2' : '#ffffff'),
+                        backgroundColor: usernameStatus === 'available' ? '#F0FDF4' : (usernameStatus === 'taken' ? '#FEF2F2' : '#FFFFFF'),
                         boxSizing: 'border-box'
                       }}
                     />
@@ -1021,10 +990,10 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                         fontSize: 11,
                         fontWeight: 500,
                         color: usernameStatus === 'available'
-                          ? '#16a34a'
+                          ? '#15803D'
                           : usernameStatus === 'taken'
-                          ? '#dc2626'
-                          : '#d97706'
+                          ? '#B91C1C'
+                          : '#B45309'
                       }}>
                         {usernameStatus === 'checking' && <Loader2 size={12} className="animate-spin" />}
                         {usernameStatus === 'available' && <CheckCircle2 size={12} />}
@@ -1048,7 +1017,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                         width: '100%',
                         padding: '9px 12px',
                         borderRadius: 10,
-                        border: '1.5px solid #cbd5e1',
+                        border: '1.5px solid #CBD5E1',
                         fontSize: 13,
                         fontFamily: 'inherit',
                         boxSizing: 'border-box'
@@ -1080,14 +1049,14 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                             textAlign: 'left',
                             padding: '10px 12px',
                             borderRadius: 12,
-                            border: selected ? '2px solid #2563eb' : '1.5px solid #cbd5e1',
-                            background: selected ? '#eff6ff' : '#ffffff',
+                            border: selected ? '2px solid #1D4ED8' : '1.5px solid #CBD5E1',
+                            background: selected ? '#EFF6FF' : '#FFFFFF',
                             cursor: 'pointer',
                             fontFamily: 'inherit',
                           }}
                         >
-                          <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{opt.title}</div>
-                          <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2, lineHeight: 1.3 }}>{opt.sub}</div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: '#0F172A' }}>{opt.title}</div>
+                          <div style={{ fontSize: 11.5, color: '#64748B', marginTop: 2, lineHeight: 1.3 }}>{opt.sub}</div>
                         </button>
                       );
                     })}
@@ -1100,7 +1069,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                     Adresă de Email * (vei primi confirmare pe email)
                   </label>
                   <div style={{ position: 'relative' }}>
-                    <Mail size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                    <Mail size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
                     <input
                       type="email"
                       required
@@ -1111,7 +1080,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                         width: '100%',
                         padding: '9px 12px 9px 36px',
                         borderRadius: 10,
-                        border: '1.5px solid #cbd5e1',
+                        border: '1.5px solid #CBD5E1',
                         fontSize: 13,
                         fontFamily: 'inherit',
                         boxSizing: 'border-box'
@@ -1137,7 +1106,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                           width: '100%',
                           padding: '9px 32px 9px 12px',
                           borderRadius: 10,
-                          border: '1.5px solid #cbd5e1',
+                          border: '1.5px solid #CBD5E1',
                           fontSize: 13,
                           fontFamily: 'inherit',
                           boxSizing: 'border-box'
@@ -1149,7 +1118,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                         tabIndex={-1}
                         style={{
                           position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                          background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 2
+                          background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: 2
                         }}
                       >
                         {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -1171,7 +1140,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                         width: '100%',
                         padding: '9px 12px',
                         borderRadius: 10,
-                        border: `1.5px solid ${confirmPassword && confirmPassword !== password ? '#ef4444' : '#cbd5e1'}`,
+                        border: `1.5px solid ${confirmPassword && confirmPassword !== password ? '#B91C1C' : '#CBD5E1'}`,
                         fontSize: 13,
                         fontFamily: 'inherit',
                         boxSizing: 'border-box'
@@ -1184,10 +1153,10 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 {password && (
                   <div style={{ marginTop: -4 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
-                      <span style={{ color: '#64748b' }}>Securitate parolă:</span>
+                      <span style={{ color: '#64748B' }}>Securitate parolă:</span>
                       <span style={{ fontWeight: 600, color: strength.color }}>{strength.text}</span>
                     </div>
-                    <div style={{ height: 4, width: '100%', backgroundColor: '#f1f5f9', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ height: 4, width: '100%', backgroundColor: '#F1F5F9', borderRadius: 2, overflow: 'hidden' }}>
                       <div style={{
                         height: '100%',
                         width: `${strength.score}%`,
@@ -1202,15 +1171,15 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 <div style={{
                   padding: '10px 12px',
                   borderRadius: 10,
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
                   fontSize: 12,
                   color: '#475569',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
                 }}>
-                  <Eye size={16} color="#2563eb" />
+                  <Eye size={16} color="#1D4ED8" />
                   <span>Contul include automat ghidarea dedicată pentru nevăzători & mobilitate urbană.</span>
                 </div>
               </>
@@ -1225,9 +1194,9 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 width: '100%',
                 padding: '12px 20px',
                 backgroundColor: (mode === 'register' && (usernameStatus === 'taken' || usernameStatus === 'checking' || username.length < 3))
-                  ? '#94a3b8'
-                  : '#2563eb',
-                color: '#ffffff',
+                  ? '#94A3B8'
+                  : '#1D4ED8',
+                color: '#FFFFFF',
                 border: 'none',
                 borderRadius: 12,
                 fontSize: 15,
@@ -1239,7 +1208,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 8,
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+                boxShadow: '0 4px 12px rgba(29, 78, 216, 0.25)',
                 transition: 'background-color 0.2s, transform 0.1s',
               }}
             >
@@ -1253,19 +1222,6 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
               )}
             </button>
 
-            {/* Notă Securitate Cont */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              marginTop: 4,
-              color: '#64748b',
-              fontSize: 11
-            }}>
-              <ShieldCheck size={14} style={{ color: '#16a34a' }} />
-              <span>Protejat cu verificare token Google OAuth & Criptare BCrypt</span>
-            </div>
           </form>
         </div>
       </div>

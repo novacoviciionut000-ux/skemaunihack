@@ -37,9 +37,9 @@ export default function ProfilePicker({ selected, onSelect }) {
               flex: 1,
               padding: '10px 12px',
               borderRadius: 14,
-              border: isActive ? '2px solid #2563eb' : '2px solid #f3f4f6',
-              background: isActive ? '#eff6ff' : '#f9fafb',
-              color: isActive ? '#1d4ed8' : '#4b5563',
+              border: isActive ? '2px solid #1D4ED8' : '2px solid #F1F5F9',
+              background: isActive ? '#EFF6FF' : '#F8FAFC',
+              color: isActive ? '#1D4ED8' : '#475569',
               cursor: 'pointer',
               display: 'flex',
               flexDirection: 'column',
@@ -47,12 +47,12 @@ export default function ProfilePicker({ selected, onSelect }) {
               gap: 4,
               fontFamily: 'inherit',
               transition: 'all 0.15s ease',
-              boxShadow: isActive ? '0 4px 12px rgba(37, 99, 235, 0.12)' : 'none',
+              boxShadow: isActive ? '0 4px 12px rgba(29, 78, 216, 0.12)' : 'none',
             }}
           >
-            <Icon size={20} color={isActive ? '#2563eb' : '#6b7280'} />
+            <Icon size={20} color={isActive ? '#1D4ED8' : '#64748B'} />
             <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1 }}>{p.label}</span>
-            <span style={{ fontSize: 10, color: isActive ? '#3b82f6' : '#9ca3af', lineHeight: 1 }}>
+            <span style={{ fontSize: 10, color: isActive ? '#1D4ED8' : '#94A3B8', lineHeight: 1 }}>
               {p.subtitle}
             </span>
           </button>

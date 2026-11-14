@@ -3,6 +3,7 @@ import {
   LifeBuoy, HeartHandshake, Trophy, Award, Navigation, CheckCircle2, XCircle, Users, Loader2, Power, X, Bell,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { palette, rgb, radius, shadow } from '../theme';
 import { useIsMobile } from '../hooks/useIsMobile';
 import {
   helpCreate, helpActive, helpCancel, helpConfirm, volunteerPresence, helpAccept, helpRelease, helpFinish,
@@ -312,7 +313,7 @@ function ClientPanel({ userLocation }) {
           onClick={sendDistress}
           disabled={busy}
           aria-label="Semnal de ajutor: anunță cei mai apropiați voluntari"
-          style={{ ...launcherStyle(isMobile), background: '#dc2626', borderColor: '#fecaca', minWidth: isMobile ? 148 : 170 }}
+          style={{ ...launcherStyle(isMobile), background: P.danger, borderColor: P.danger, minWidth: isMobile ? 148 : 170 }}
         >
           {busy ? <Loader2 size={20} className="animate-spin" /> : <LifeBuoy size={20} />}
           <span>{busy ? 'Se trimite...' : 'Cer ajutor'}</span>
@@ -320,10 +321,10 @@ function ClientPanel({ userLocation }) {
       )}
 
       {(request || thanks || error) && (
-        <div role="alert" aria-live="assertive" style={sheetStyle(isMobile, request?.status === 'AWAITING_CONFIRMATION' ? '#f59e0b' : '#dc2626')}>
+        <div role="alert" aria-live="assertive" style={sheetStyle(isMobile, request?.status === 'AWAITING_CONFIRMATION' ? P.warning : P.danger)}>
           <div style={sheetHeader}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800 }}>
-              <LifeBuoy size={18} color="#f87171" />
+              <LifeBuoy size={18} color={P.danger} />
               {thanks ? 'Fapta bună confirmată' : 'Semnal de ajutor'}
             </span>
             {!request && (
@@ -336,20 +337,20 @@ function ClientPanel({ userLocation }) {
           {request && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 15, fontWeight: 700, lineHeight: 1.35 }}>
               {request.status === 'OPEN' && <Loader2 size={18} className="animate-spin" style={{ flexShrink: 0 }} />}
-              {request.status === 'ACCEPTED' && <Navigation size={18} color="#4ade80" style={{ flexShrink: 0 }} />}
+              {request.status === 'ACCEPTED' && <Navigation size={18} color={P.success} style={{ flexShrink: 0 }} />}
               <span>{statusText}</span>
             </div>
           )}
           {request?.rejectedCount > 0 && request.status === 'ACCEPTED' && (
-            <div style={{ fontSize: 12.5, color: '#cbd5e1', marginTop: 6 }}>Ai spus că nu e gata încă; voluntarul continuă.</div>
+            <div style={{ fontSize: 12.5, color: P.slate600, marginTop: 6 }}>Ai spus că nu e gata încă; voluntarul continuă.</div>
           )}
 
           {asking && request?.status === 'AWAITING_CONFIRMATION' && (
             <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-              <button type="button" onClick={() => answer(true)} style={{ ...bigBtn, background: '#16a34a' }} aria-label="Da, a fost rezolvat">
+              <button type="button" onClick={() => answer(true)} style={{ ...bigBtn, background: P.success }} aria-label="Da, a fost rezolvat">
                 <CheckCircle2 size={22} /> Da
               </button>
-              <button type="button" onClick={() => answer(false)} style={{ ...bigBtn, background: '#475569' }} aria-label="Nu, încă nu e rezolvat">
+              <button type="button" onClick={() => answer(false)} style={{ ...bigBtn, background: P.slate600 }} aria-label="Nu, încă nu e rezolvat">
                 <XCircle size={22} /> Nu
               </button>
             </div>
@@ -364,7 +365,7 @@ function ClientPanel({ userLocation }) {
               Mulțumim! <strong>{thanks.volunteer || 'Voluntarul'}</strong> a primit <strong>{thanks.points}</strong> puncte de faptă bună.
             </div>
           )}
-          {error && <div style={{ color: '#fca5a5', fontSize: 13, marginTop: 8 }}>{error}</div>}
+          {error && <div style={{ color: P.danger, fontSize: 13, marginTop: 8 }}>{error}</div>}
         </div>
       )}
     </>
@@ -630,7 +631,7 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label={`Panou voluntar. ${onDuty ? 'În serviciu' : 'În afara serviciului'}. ${points} puncte.`}
-        style={{ ...launcherStyle(isMobile), background: onDuty ? '#15803d' : '#1e293b', borderColor: onDuty ? '#86efac' : '#475569' }}
+        style={{ ...launcherStyle(isMobile), background: onDuty ? P.success : P.white, color: onDuty ? P.white : P.ink, borderColor: onDuty ? P.success : P.slate300 }}
       >
         <HeartHandshake size={19} />
         <span>{points} pct</span>
@@ -638,10 +639,10 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
       </button>
 
       {open && (
-        <div style={sheetStyle(isMobile, job ? '#22c55e' : nearby.length ? '#dc2626' : '#334155')} role="region" aria-label="Panou voluntar">
+        <div style={sheetStyle(isMobile, job ? P.success : nearby.length ? P.danger : P.primary)} role="region" aria-label="Panou voluntar">
           <div style={sheetHeader}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800 }}>
-              <HeartHandshake size={18} color="#4ade80" /> Voluntar
+              <HeartHandshake size={18} color={P.success} /> Voluntar
             </span>
             <div style={{ display: 'flex', gap: 6 }}>
               <button type="button" aria-label="Clasament voluntari" style={iconBtn} onClick={openBoard}><Trophy size={16} /></button>
@@ -651,26 +652,26 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
 
           {/* Points and level */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-            <Award size={30} color="#facc15" style={{ flexShrink: 0 }} />
+            <Award size={30} color={P.warning} style={{ flexShrink: 0 }} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 20, fontWeight: 900 }}>{points} <span style={{ fontSize: 13, fontWeight: 600, color: '#cbd5e1' }}>puncte de faptă bună</span></div>
-              <div style={{ fontSize: 12.5, color: '#cbd5e1' }}>
+              <div style={{ fontSize: 20, fontWeight: 900 }}>{points} <span style={{ fontSize: 13, fontWeight: 600, color: P.slate600 }}>puncte de faptă bună</span></div>
+              <div style={{ fontSize: 12.5, color: P.slate600 }}>
                 {level}{data?.nextLevelAt ? ` · încă ${data.nextLevelAt - points} până la nivelul următor` : ''}
                 {data ? ` · ${data.deedsCompleted} fapte` : ''}
               </div>
               {data?.nextLevelAt > 0 && (
-                <div style={{ height: 6, borderRadius: 3, background: '#334155', marginTop: 5, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${Math.min(100, (points / data.nextLevelAt) * 100)}%`, background: '#facc15' }} />
+                <div style={{ height: 6, borderRadius: 3, background: P.slate200, marginTop: 5, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.min(100, (points / data.nextLevelAt) * 100)}%`, background: P.warning }} />
                 </div>
               )}
             </div>
           </div>
 
           {celebration && (
-            <div style={{ background: '#14532d', border: '1px solid #22c55e', borderRadius: 12, padding: 12, marginBottom: 12 }}>
+            <div style={{ background: P.successSoft, border: `1px solid ${P.success}`, borderRadius: 12, color: P.ink, padding: 12, marginBottom: 12 }}>
               <div style={{ fontWeight: 800, marginBottom: 4 }}>+{celebration.pointsAwarded} puncte! {celebration.clientName} a confirmat.</div>
               {celebration.breakdown && (
-                <div style={{ fontSize: 12.5, color: '#bbf7d0', lineHeight: 1.5 }}>
+                <div style={{ fontSize: 12.5, color: P.success, lineHeight: 1.5 }}>
                   Bază {celebration.breakdown.base}
                   {celebration.breakdown.speed > 0 && ` · răspuns rapid +${celebration.breakdown.speed}`}
                   {celebration.breakdown.distance > 0 && ` · distanță +${celebration.breakdown.distance}`}
@@ -687,13 +688,13 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
               <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>
                 {job.status === 'ACCEPTED' ? `Mergi la ${job.clientName}` : `Așteptăm confirmarea lui ${job.clientName}...`}
               </div>
-              <div style={{ fontSize: 13, color: '#cbd5e1', marginBottom: 10 }}>
+              <div style={{ fontSize: 13, color: P.slate600, marginBottom: 10 }}>
                 {job.distanceMeters != null && `${shortMeters(job.distanceMeters)} până la persoană`}
                 {job.note && ` · „${job.note}”`}
               </div>
               {job.status === 'ACCEPTED' && (
                 <>
-                  <button type="button" onClick={finish} disabled={busy === 'finish'} style={{ ...bigBtn, background: '#16a34a', width: '100%' }}>
+                  <button type="button" onClick={finish} disabled={busy === 'finish'} style={{ ...bigBtn, background: P.success, width: '100%' }}>
                     {busy === 'finish' ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={22} />} Fapta e gata
                   </button>
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -703,7 +704,7 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
                 </>
               )}
               {job.status === 'AWAITING_CONFIRMATION' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#fde68a' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: P.warning }}>
                   <Loader2 size={16} className="animate-spin" /> Persoana este întrebată vocal dacă a fost rezolvat.
                 </div>
               )}
@@ -714,27 +715,27 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
                 type="button"
                 onClick={toggleDuty}
                 aria-pressed={onDuty}
-                style={{ ...bigBtn, width: '100%', background: onDuty ? '#15803d' : '#2563eb' }}
+                style={{ ...bigBtn, width: '100%', background: onDuty ? P.success : P.primary }}
               >
                 <Power size={20} /> {onDuty ? 'În serviciu · apasă ca să ieși' : 'Intră în serviciu'}
               </button>
-              {onDuty && !hasLocation && <div style={{ fontSize: 12.5, color: '#fde68a', marginTop: 8 }}>Aștept semnalul GPS...</div>}
+              {onDuty && !hasLocation && <div style={{ fontSize: 12.5, color: P.warning, marginTop: 8 }}>Aștept semnalul GPS...</div>}
 
               {onDuty && hasLocation && (
                 <div style={{ marginTop: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#cbd5e1', marginBottom: 6 }}>
-                    {nearby.length ? <Bell size={14} color="#f87171" /> : <Users size={14} />}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: P.slate600, marginBottom: 6 }}>
+                    {nearby.length ? <Bell size={14} color={P.danger} /> : <Users size={14} />}
                     {nearby.length ? 'Cereri de ajutor aproape de tine' : 'Nicio cerere aproape de tine acum.'}
                   </div>
                   {nearby.map((r) => (
                     <div key={r.id} style={requestCard}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 800 }}>{r.clientFirstName} · {shortMeters(r.distanceMeters)}</div>
-                        <div style={{ fontSize: 12, color: '#cbd5e1' }}>
+                        <div style={{ fontSize: 12, color: P.slate600 }}>
                           acum {Math.max(1, Math.round(r.ageSeconds / 60))} min{r.note ? ` · „${r.note}”` : ''}
                         </div>
                       </div>
-                      <button type="button" onClick={() => accept(r)} disabled={Boolean(busy)} style={{ ...bigBtn, padding: '10px 14px', background: '#dc2626' }}>
+                      <button type="button" onClick={() => accept(r)} disabled={Boolean(busy)} style={{ ...bigBtn, padding: '10px 14px', background: P.danger }}>
                         {busy === `accept-${r.id}` ? <Loader2 size={18} className="animate-spin" /> : 'Ajut'}
                       </button>
                     </div>
@@ -744,7 +745,7 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
             </>
           )}
 
-          {error && <div style={{ color: '#fca5a5', fontSize: 13, marginTop: 8 }}>{error}</div>}
+          {error && <div style={{ color: P.danger, fontSize: 13, marginTop: 8 }}>{error}</div>}
         </div>
       )}
 
@@ -752,16 +753,16 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
         <div style={modalBackdrop} onClick={() => setBoard(null)}>
           <div style={modalCard} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Clasamentul voluntarilor">
             <div style={sheetHeader}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800 }}><Trophy size={18} color="#facc15" /> Clasament voluntari</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800 }}><Trophy size={18} color={P.warning} /> Clasament voluntari</span>
               <button type="button" aria-label="Închide" style={iconBtn} onClick={() => setBoard(null)}><X size={16} /></button>
             </div>
             {board.loading && <Loader2 size={20} className="animate-spin" />}
-            {board.error && <div style={{ color: '#fca5a5' }}>{board.error}</div>}
-            {!board.loading && !board.rows.length && !board.error && <div style={{ color: '#cbd5e1' }}>Încă nu are nimeni puncte. Fii primul!</div>}
+            {board.error && <div style={{ color: P.danger }}>{board.error}</div>}
+            {!board.loading && !board.rows.length && !board.error && <div style={{ color: P.slate600 }}>Încă nu are nimeni puncte. Fii primul!</div>}
             {board.rows.map((r) => (
-              <div key={r.rank} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #1e293b' }}>
-                <span style={{ width: 24, fontWeight: 900, color: r.rank <= 3 ? '#facc15' : '#94a3b8' }}>{r.rank}</span>
-                <span style={{ flex: 1, fontWeight: 700 }}>{r.name}<span style={{ display: 'block', fontSize: 11.5, color: '#94a3b8', fontWeight: 500 }}>{r.level} · {r.deedsCompleted} fapte</span></span>
+              <div key={r.rank} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: `1px solid ${P.slate200}` }}>
+                <span style={{ width: 24, fontWeight: 900, color: r.rank <= 3 ? P.warning : P.slate500 }}>{r.rank}</span>
+                <span style={{ flex: 1, fontWeight: 700 }}>{r.name}<span style={{ display: 'block', fontSize: 11.5, color: P.slate500, fontWeight: 500 }}>{r.level} · {r.deedsCompleted} fapte</span></span>
                 <span style={{ fontWeight: 900 }}>{r.deedPoints}</span>
               </div>
             ))}
@@ -772,52 +773,55 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────────────────────────
+// ─── Styles (light cards, same look as the voice panel and planner) ────────────
+
+const P = palette;
 
 const launcherStyle = (isMobile) => ({
   position: 'fixed',
   top: isMobile ? 64 : 76,
   left: isMobile ? 12 : 20,
   zIndex: 1005,
-  minHeight: 48,
+  minHeight: 44,
   padding: '0 16px',
-  borderRadius: 24,
-  border: '2px solid',
-  color: '#ffffff',
-  fontSize: 15,
-  fontWeight: 800,
+  borderRadius: radius.pill,
+  border: '1px solid',
+  color: P.white,
+  fontSize: 14.5,
+  fontWeight: 700,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   gap: 8,
   cursor: 'pointer',
-  boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
-  fontFamily: 'system-ui, sans-serif',
+  boxShadow: shadow.md,
+  fontFamily: 'inherit',
 });
 
 const sheetStyle = (isMobile, accent) => ({
   position: 'fixed',
-  left: isMobile ? 10 : 20,
-  right: isMobile ? 10 : 'auto',
-  top: isMobile ? 120 : 132,
+  left: isMobile ? 12 : 20,
+  right: isMobile ? 12 : 'auto',
+  top: isMobile ? 118 : 130,
   width: isMobile ? 'auto' : 380,
   maxHeight: isMobile ? 'calc(100dvh - 140px)' : 'calc(100dvh - 160px)',
   overflowY: 'auto',
   zIndex: 1300, // above the full-screen camera (1200)
-  background: 'rgba(15, 23, 42, 0.97)',
-  color: '#f8fafc',
-  border: `2px solid ${accent}`,
-  borderRadius: 18,
+  background: P.white,
+  color: P.ink,
+  border: `1px solid ${P.slate200}`,
+  borderTop: `4px solid ${accent}`,
+  borderRadius: radius.lg,
   padding: 16,
-  boxShadow: '0 18px 45px rgba(0,0,0,0.5)',
-  fontFamily: 'system-ui, sans-serif',
+  boxShadow: shadow.lg,
+  fontFamily: 'inherit',
 });
 
-const sheetHeader = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, fontSize: 14 };
-const iconBtn = { width: 32, height: 32, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.1)', color: '#e2e8f0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' };
-const bigBtn = { flex: 1, minHeight: 52, borderRadius: 14, border: 'none', color: '#fff', fontSize: 16, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', padding: '0 16px' };
-const smallBtn = { minHeight: 40, borderRadius: 10, border: '1px solid #475569', background: '#1e293b', color: '#e2e8f0', fontSize: 13, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', padding: '0 12px' };
-const requestCard = { display: 'flex', alignItems: 'center', gap: 10, padding: 10, borderRadius: 12, background: '#1e293b', border: '1px solid #7f1d1d', marginBottom: 8 };
-const badgeDot = { width: 10, height: 10, borderRadius: '50%', background: '#f87171', boxShadow: '0 0 0 3px rgba(248,113,113,0.35)' };
-const modalBackdrop = { position: 'fixed', inset: 0, zIndex: 1400, background: 'rgba(2,6,23,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
-const modalCard = { width: 'min(420px, 100%)', maxHeight: '80dvh', overflowY: 'auto', background: '#0f172a', color: '#f8fafc', borderRadius: 18, padding: 16, border: '1px solid #334155', fontFamily: 'system-ui, sans-serif' };
+const sheetHeader = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, fontSize: 15, color: P.ink };
+const iconBtn = { width: 36, height: 36, borderRadius: radius.sm, border: 'none', background: P.slate100, color: P.slate700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' };
+const bigBtn = { flex: 1, minHeight: 52, borderRadius: radius.md, border: 'none', color: P.white, fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', padding: '0 16px', fontFamily: 'inherit' };
+const smallBtn = { minHeight: 40, borderRadius: radius.sm, border: `1px solid ${P.slate300}`, background: P.white, color: P.slate700, fontSize: 13, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', padding: '0 12px', fontFamily: 'inherit' };
+const requestCard = { display: 'flex', alignItems: 'center', gap: 10, padding: 12, borderRadius: radius.md, background: P.dangerSoft, border: `1px solid ${P.dangerSoftBorder}`, marginBottom: 8 };
+const badgeDot = { width: 10, height: 10, borderRadius: '50%', background: P.danger, boxShadow: `0 0 0 3px rgba(${rgb.danger}, 0.25)` };
+const modalBackdrop = { position: 'fixed', inset: 0, zIndex: 1400, background: `rgba(${rgb.ink}, 0.5)`, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
+const modalCard = { width: 'min(420px, 100%)', maxHeight: '80dvh', overflowY: 'auto', background: P.white, color: P.ink, borderRadius: radius.lg, padding: 16, border: `1px solid ${P.slate200}`, boxShadow: shadow.lg, fontFamily: 'inherit' };

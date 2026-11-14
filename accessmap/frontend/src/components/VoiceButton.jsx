@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { palette, rgb, radius, shadow, font } from '../theme';
 import { useVoiceAssistant } from '../hooks/useVoiceAssistant';
 import { findClosestPlace, formatDistance } from '../api/client';
 import { speechQueue, playListenBeep, unlockAudioContext } from '../utils/speechQueue';
@@ -289,175 +290,147 @@ export default function VoiceButton({
   }, []);
 
   // ── Stiluri ────────────────────────────────────────────────────────────
-  const statusColors = {
-    info:    { background: 'rgba(15,23,42,0.85)', color: '#93C5FD' },
-    success: { background: 'rgba(15,23,42,0.85)', color: '#4ADE80' },
-    error:   { background: 'rgba(15,23,42,0.85)', color: '#F87171' },
-  };
-  const sc = statusColors[statusType] || statusColors.info;
+  const statusTone = {
+    info: { color: palette.primary, background: palette.primarySoft, border: palette.primarySoftBorder },
+    success: { color: palette.success, background: palette.successSoft, border: palette.successOnDark },
+    error: { color: palette.danger, background: palette.dangerSoft, border: palette.dangerSoftBorder },
+  }[statusType] || {};
 
-  const btnColor = alwaysOn
-    ? (isListening ? '#16a34a' : '#15803d')
-    : (isListening ? '#EF4444' : '#2563EB');
-
-  const btnShadow = alwaysOn
-    ? (isListening
-        ? '0 0 0 4px rgba(22,163,74,0.35), 0 4px 16px rgba(22,163,74,0.5)'
-        : '0 4px 16px rgba(21,128,61,0.4)')
-    : (isListening
-        ? '0 0 0 4px rgba(239,68,68,0.35), 0 4px 16px rgba(239,68,68,0.5)'
-        : '0 4px 16px rgba(37,99,235,0.4)');
-
+  const listeningColor = alwaysOn ? palette.success : palette.danger;
   const btnLabel = alwaysOn
-    ? (isListening ? 'Ascult...' : 'Mereu activ — aștept comandă')
-    : (isListening ? 'Ascult... (apasă pt a opri)' : 'Apasă și spune comanda');
+    ? (isListening ? 'Ascult...' : 'Microfon permanent activ')
+    : (isListening ? 'Ascult... atinge pentru a opri' : 'Spune o comandă');
 
   return (
     <div
       style={{
+        margin: '0 12px 12px',
+        padding: 12,
         display: 'flex',
         flexDirection: 'column',
-        gap: '8px',
-        width: '100%',
-        padding: '0 12px 12px',
-        boxSizing: 'border-box',
+        gap: 10,
+        background: palette.white,
+        border: `1px solid ${palette.slate200}`,
+        borderRadius: radius.lg,
+        boxShadow: shadow.lg,
+        fontFamily: font,
       }}
     >
-      {/* ── Buton principal o singură dată ── */}
+      {/* ── Buton principal ── */}
       <button
+        type="button"
         onClick={handlePressOnce}
         disabled={alwaysOn}
         aria-label={isListening ? 'Oprește ascultarea vocală' : 'Activează comanda vocală'}
         style={{
           width: '100%',
-          minHeight: '58px',
+          minHeight: 56,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '10px',
-          backgroundColor: btnColor,
-          color: '#FFFFFF',
-          fontSize: '0.95rem',
-          fontWeight: '700',
+          gap: 10,
+          background: isListening || alwaysOn ? listeningColor : palette.primary,
+          color: palette.white,
+          fontSize: 16,
+          fontWeight: 700,
+          letterSpacing: 0.1,
           border: 'none',
-          borderRadius: '14px',
+          borderRadius: radius.md,
           cursor: alwaysOn ? 'default' : 'pointer',
-          opacity: alwaysOn ? 0.6 : 1,
-          boxShadow: btnShadow,
-          transition: 'background 0.2s, box-shadow 0.2s',
-          fontFamily: 'system-ui, sans-serif',
+          boxShadow: isListening ? `0 0 0 4px rgba(${alwaysOn ? rgb.success : rgb.danger}, 0.22)` : 'none',
+          transition: 'background 0.15s, box-shadow 0.15s',
+          fontFamily: font,
           userSelect: 'none',
         }}
       >
-        {/* Iconiță SVG microfon cu animație puls */}
         <svg
           width="22" height="22" viewBox="0 0 24 24"
           fill="none" stroke="currentColor"
           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-          style={{
-            flexShrink: 0,
-            animation: isListening ? 'micPulse 0.75s ease-in-out infinite alternate' : 'none',
-          }}
+          aria-hidden="true"
+          style={{ flexShrink: 0, animation: isListening ? 'micPulse 0.75s ease-in-out infinite alternate' : 'none' }}
         >
-          <rect x="9" y="1" width="6" height="11" rx="3" />
+          <rect x="9" y="2" width="6" height="11" rx="3" />
           <path d="M5 10a7 7 0 0014 0" />
-          <line x1="12" y1="20" x2="12" y2="23" />
-          <line x1="8" y1="23" x2="16" y2="23" />
+          <line x1="12" y1="17" x2="12" y2="21" />
+          <line x1="8" y1="21" x2="16" y2="21" />
         </svg>
         {btnLabel}
       </button>
 
-      {/* ── Toggle always-on ── */}
-      <button
-        onClick={handleToggleAlwaysOn}
-        aria-label={alwaysOn ? 'Dezactivează microfonul permanent' : 'Activează microfonul permanent (always-on)'}
-        style={{
-          width: '100%',
-          minHeight: '44px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '8px',
-          backgroundColor: alwaysOn ? '#064e3b' : '#1e293b',
-          color: alwaysOn ? '#6ee7b7' : '#94a3b8',
-          fontSize: '0.82rem',
-          fontWeight: '600',
-          border: `1px solid ${alwaysOn ? '#10b981' : '#334155'}`,
-          borderRadius: '12px',
-          cursor: 'pointer',
-          transition: 'all 0.2s',
-          fontFamily: 'system-ui, sans-serif',
-          userSelect: 'none',
-        }}
-      >
-        {/* Iconiță radio wave */}
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-          <path d="M2 12C2 12 5 5 12 5s10 7 10 7" opacity="0.4"/>
-          <path d="M5 12c0 0 2-4 7-4s7 4 7 4" opacity="0.65"/>
-          <circle cx="12" cy="12" r="2" fill="currentColor"/>
-        </svg>
-        {alwaysOn
-          ? 'Microfon mereu activ — apasă pentru a opri'
-          : 'Activează microfon permanent'}
-      </button>
-
-      {/* ── Indicator permisiune microfon ── */}
-      {permissionGranted === false && (
-        <div style={{
-          padding: '7px 10px', borderRadius: 10, fontSize: '0.78rem',
-          fontWeight: 600, background: 'rgba(239,68,68,0.15)',
-          color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)',
-          fontFamily: 'system-ui, sans-serif',
-        }}>
-          Permisiune microfon refuzată — apasă pictograma de blocare din bara browserului și permite microfonul.
-        </div>
-      )}
-
       {/* ── Status / feedback ── */}
       {statusMessage && (
-        <div style={{
-          padding: '8px 12px', borderRadius: '10px',
-          fontSize: '0.83rem', fontWeight: '600',
-          fontFamily: 'system-ui, sans-serif',
-          textAlign: 'center', ...sc,
+        <div role="status" style={{
+          padding: '8px 12px', borderRadius: radius.sm,
+          fontSize: 13.5, fontWeight: 600, lineHeight: 1.35, textAlign: 'center',
+          color: statusTone.color, background: statusTone.background, border: `1px solid ${statusTone.border}`,
         }}>
           {statusMessage}
         </div>
       )}
 
-      {/* ── Transcript ultima recunoaștere ── */}
-      {transcript && !isListening && (
-        <div style={{
-          padding: '5px 10px', borderRadius: 8,
-          fontSize: '0.78rem', color: '#64748b',
-          fontFamily: 'system-ui, sans-serif',
-          fontStyle: 'italic', textAlign: 'center',
+      {permissionGranted === false && (
+        <div role="alert" style={{
+          padding: '8px 12px', borderRadius: radius.sm, fontSize: 13, fontWeight: 600, lineHeight: 1.35,
+          color: palette.danger, background: palette.dangerSoft, border: `1px solid ${palette.dangerSoftBorder}`,
         }}>
+          Microfonul este blocat. Permite-l din setările browserului (pictograma lacăt din bara de adresă).
+        </div>
+      )}
+
+      {transcript && !isListening && (
+        <div style={{ fontSize: 12.5, color: palette.slate500, textAlign: 'center', lineHeight: 1.35 }}>
           Am auzit: &ldquo;{transcript}&rdquo;
         </div>
       )}
 
-      {/* ── Hint comenzi ── */}
-      {!isListening && !statusMessage && (
-        <p style={{
-          margin: 0, textAlign: 'center',
-          fontSize: '0.76rem', color: '#64748b',
-          fontFamily: 'system-ui, sans-serif', lineHeight: 1.5,
-        }}>
-          Atinge de două ori oriunde pentru comenzi vocale.
-          <br />
-          &ldquo;Du-mă la Kaufland&rdquo;
-          {' · '}&ldquo;Am nevoie de ajutor&rdquo;
-          {' · '}&ldquo;Deschide camera&rdquo;
+      {/* ── Rând secundar: indiciu + microfon permanent ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <p style={{ margin: 0, flex: 1, fontSize: 12.5, color: palette.slate600, lineHeight: 1.4 }}>
+          {isListening
+            ? 'Vorbește acum.'
+            : <>Atinge ecranul de două ori, apoi spune de exemplu <strong style={{ color: palette.ink }}>„Du-mă la Kaufland”</strong> sau <strong style={{ color: palette.ink }}>„Am nevoie de ajutor”</strong>.</>}
         </p>
-      )}
+        <button
+          type="button"
+          onClick={handleToggleAlwaysOn}
+          role="switch"
+          aria-checked={alwaysOn}
+          aria-label="Microfon permanent"
+          style={{
+            flexShrink: 0,
+            minHeight: 40,
+            padding: '0 12px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            background: alwaysOn ? palette.successSoft : palette.slate50,
+            color: alwaysOn ? palette.success : palette.slate700,
+            border: `1px solid ${alwaysOn ? palette.success : palette.slate300}`,
+            borderRadius: radius.pill,
+            fontSize: 12.5,
+            fontWeight: 700,
+            cursor: 'pointer',
+            fontFamily: font,
+          }}
+        >
+          <span aria-hidden="true" style={{
+            width: 28, height: 16, borderRadius: 8, position: 'relative',
+            background: alwaysOn ? palette.success : palette.slate300, transition: 'background 0.15s',
+          }}>
+            <span style={{
+              position: 'absolute', top: 2, left: alwaysOn ? 14 : 2, width: 12, height: 12, borderRadius: '50%',
+              background: palette.white, transition: 'left 0.15s',
+            }} />
+          </span>
+          Permanent
+        </button>
+      </div>
 
-      {/* ── CSS animații ── */}
       <style>{`
         @keyframes micPulse {
           from { transform: scale(1); opacity: 1; }
-          to   { transform: scale(1.3); opacity: 0.6; }
+          to   { transform: scale(1.25); opacity: 0.6; }
         }
       `}</style>
     </div>

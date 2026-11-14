@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "mobile": "vite build && vite preview --port 3000 --strictPort",
-    "test": "node tests/voiceCommands.test.mjs"
+    "test": "node tests/voiceCommands.test.mjs && node tests/palette.test.mjs"
   },
   "dependencies": {
     "@tensorflow-models/coco-ssd": "^2.2.3",

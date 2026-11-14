@@ -35,6 +35,8 @@ const WRONG_WAY_CONFIRM_MS = 3500;
 const WRONG_WAY_REPEAT_MS = 12000;
 // A live GPS normally delivers a fix every second or two; past this it has gone quiet
 const GPS_STALE_MS = 15000;
+// GPS problems worth telling the user about: they can fix these, the app can't
+const GPS_BLOCKED_STATES = new Set(['denied', 'unsupported', 'insecure']);
 // Worse than this and the fix cannot support walking guidance
 const GPS_WEAK_ACCURACY_M = 75;
 // Crossing warnings: first on approach, then at the kerb itself
@@ -244,10 +246,11 @@ export default function App() {
           : 'Poziția nu este disponibilă. Semnal GPS slab.',
         3: 'GPS-ul nu a răspuns la timp.',
       };
+      // Only a refused permission is shown; a slow or silent GPS is not reported anywhere
       setGpsStatus((s) => ({
         ...s,
-        state: s.fixes > 0 ? 'stale' : 'error',
-        message: messages[err.code] || err.message,
+        state: err.code === 1 ? 'denied' : s.fixes > 0 ? 'live' : 'unknown',
+        message: err.code === 1 ? messages[1] : s.message,
       }));
     };
 
@@ -312,20 +315,6 @@ export default function App() {
     };
   }, []);
 
-  // Flag a GPS that has gone quiet. A frozen position looks identical to standing still,
-  // so the age of the last fix is what distinguishes the two.
-  useEffect(() => {
-    if (gpsStatus.state !== 'live' && gpsStatus.state !== 'weak') return;
-    const timer = setInterval(() => {
-      setGpsStatus((s) => {
-        if ((s.state !== 'live' && s.state !== 'weak') || !s.at) return s;
-        if (Date.now() - s.at < GPS_STALE_MS) return s;
-        return { ...s, state: 'stale', message: 'GPS-ul nu mai trimite poziții noi.' };
-      });
-    }, 4000);
-    return () => clearInterval(timer);
-  }, [gpsStatus.state]);
-
   // Say once, out loud, that position tracking is not actually running. Without this the
   // route simply never advances and there is nothing on screen explaining why.
   useEffect(() => {
@@ -335,7 +324,8 @@ export default function App() {
       gpsWarnedRef.current = null;
       return;
     }
-    if (gpsStatus.state === 'unknown') return;
+    // Only problems the user can act on; a quiet GPS is not announced
+    if (!GPS_BLOCKED_STATES.has(gpsStatus.state)) return;
     if (gpsWarnedRef.current === gpsStatus.state) return;
     gpsWarnedRef.current = gpsStatus.state;
     if (voiceGuidanceEnabled) {
@@ -785,61 +775,18 @@ export default function App() {
         followUser={followUser && isNavigating}
       />
 
-      {/* GPS health banner. A frozen position makes the whole navigation silently wrong
-          and nothing else on screen would show it, so this sits above everything.
-          Placed at the bottom: the top strip belongs to the sign-in buttons, which this
-          used to cover, and the bottom is also easier to reach with a thumb.
-          Tappable, because on iOS the permission prompt only appears inside a gesture. */}
-      {gpsStatus.state !== 'live' && gpsStatus.state !== 'unknown' && (
+      {/* Location blocked (permission refused, no GPS, plain http). Tappable: on iOS the
+          permission prompt only appears inside a gesture. A slow GPS is never shown. */}
+      {GPS_BLOCKED_STATES.has(gpsStatus.state) && (
         <button
           type="button"
-          aria-label={`Problemă GPS: ${gpsStatus.message} Apasă pentru a cere din nou accesul la locație.`}
+          className="am-gps-banner"
+          aria-label={`Locație indisponibilă: ${gpsStatus.message}`}
           onClick={handleRequestGps}
-          style={{
-            position: 'absolute',
-            bottom: isMobile ? 104 : 96,
-            left: 8,
-            right: 8,
-            zIndex: 2000,
-            padding: '10px 12px',
-            borderRadius: 10,
-            border: 'none',
-            textAlign: 'left',
-            background: 'rgba(185, 28, 28, 0.96)',
-            color: '#fef2f2',
-            fontSize: 12,
-            fontWeight: 700,
-            fontFamily: "'Inter', system-ui, sans-serif",
-            boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
-            cursor: 'pointer',
-            minHeight: 44,
-            width: 'calc(100% - 16px)',
-          }}
         >
-          GPS: {gpsStatus.message}
+          <span className="am-gps-banner__title">Locație indisponibilă</span>
+          <span className="am-gps-banner__text">{gpsStatus.message}</span>
         </button>
-      )}
-
-      {/* Live GPS readout while navigating, so a stalled fix is visible at a glance.
-          Same strip as the banner above, which it never shares the screen with. */}
-      {isNavigating && gpsStatus.state === 'live' && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: isMobile ? 104 : 96,
-            left: 8,
-            zIndex: 1990,
-            padding: '4px 8px',
-            borderRadius: 8,
-            background: 'rgba(0,0,0,0.7)',
-            color: '#86efac',
-            fontSize: 11,
-            fontFamily: 'monospace',
-            pointerEvents: 'none',
-          }}
-        >
-          GPS {gpsStatus.fixes} fix · ±{gpsStatus.accuracy}m
-        </div>
       )}
 
       {/* Real-time Turn-by-Turn Navigation HUD */}
@@ -886,24 +833,24 @@ export default function App() {
           right: isMobile ? 12 : 'auto',
           transform: isMobile ? 'none' : 'translateX(-50%)',
           zIndex: 1100,
-          background: '#DC2626',
+          background: '#B91C1C',
           color: 'white',
           padding: isMobile ? '12px 14px' : '16px 24px',
           borderRadius: 12,
           fontWeight: 'bold',
-          boxShadow: '0 8px 24px rgba(220,38,38,0.5)',
+          boxShadow: '0 8px 24px rgba(185, 28, 28, 0.5)',
           display: 'flex',
           alignItems: 'center',
           flexWrap: 'wrap',
           gap: 10,
-          fontFamily: 'system-ui, sans-serif',
+          fontFamily: 'inherit',
           fontSize: isMobile ? 13 : 14,
         }}>
           <ShieldAlert size={18} />
           <span>URGENȚĂ ACTIVATĂ — Coordonate pregătite pentru apelul 112.</span>
           <a
             href="tel:112"
-            style={{ background: 'white', color: '#DC2626', padding: '8px 14px', borderRadius: 8, textDecoration: 'none' }}
+            style={{ background: 'white', color: '#B91C1C', padding: '8px 14px', borderRadius: 8, textDecoration: 'none' }}
           >
             SUNĂ 112
           </a>

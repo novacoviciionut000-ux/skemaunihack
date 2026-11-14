@@ -148,13 +148,13 @@ export default function NavigationGuidance({
         width: isMobile ? 'calc(100vw - 24px)' : 'min(94vw, 540px)',
         maxWidth: 540,
         margin: '0 auto',
-        background: '#0f172a',
-        color: '#ffffff',
+        background: '#0F172A',
+        color: '#FFFFFF',
         borderRadius: 20,
-        border: isOffRoute ? '2px solid #ef4444' : '2px solid #2563eb',
-        boxShadow: '0 16px 40px rgba(0, 0, 0, 0.4)',
+        border: isOffRoute ? '2px solid #B91C1C' : '2px solid #1D4ED8',
+        boxShadow: '0 16px 40px rgba(15, 23, 42, 0.4)',
         overflow: 'hidden',
-        fontFamily: "'Inter', system-ui, sans-serif",
+        fontFamily: 'inherit',
         animation: 'slideDown 0.25s ease-out',
       }}
     >
@@ -170,8 +170,8 @@ export default function NavigationGuidance({
         <div
           style={{
             padding: '7px 12px',
-            background: '#b91c1c',
-            color: '#fef2f2',
+            background: '#B91C1C',
+            color: '#FEF2F2',
             fontSize: 12,
             fontWeight: 700,
             display: 'flex',
@@ -190,8 +190,8 @@ export default function NavigationGuidance({
           role="alert"
           style={{
             padding: '7px 12px',
-            background: '#c2410c',
-            color: '#fff7ed',
+            background: '#B45309',
+            color: '#FFFBEB',
             fontSize: 12,
             fontWeight: 700,
             display: 'flex',
@@ -211,7 +211,7 @@ export default function NavigationGuidance({
           alignItems: 'center',
           padding: '12px 14px',
           gap: 12,
-          background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
+          background: 'linear-gradient(180deg, #1E293B 0%, #0F172A 100%)',
         }}
       >
         {/* Turn Direction Icon Badge */}
@@ -220,13 +220,13 @@ export default function NavigationGuidance({
             width: 48,
             height: 48,
             borderRadius: 14,
-            background: activeStep?.maneuver === 'arrive' ? '#16a34a' : '#2563eb',
-            color: '#ffffff',
+            background: activeStep?.maneuver === 'arrive' ? '#15803D' : '#1D4ED8',
+            color: '#FFFFFF',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.4)',
+            boxShadow: '0 4px 12px rgba(29, 78, 216, 0.4)',
           }}
         >
           {getManeuverIcon(activeStep?.maneuver, 28)}
@@ -239,13 +239,13 @@ export default function NavigationGuidance({
               style={{
                 fontSize: 22,
                 fontWeight: 800,
-                color: '#60a5fa',
+                color: '#93C5FD',
                 letterSpacing: -0.5,
               }}
             >
               {formatDistance(distToManeuver)}
             </span>
-            <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 600 }}>
+            <span style={{ fontSize: 13, color: '#94A3B8', fontWeight: 600 }}>
               {activeStep?.shortRo || 'Pas următor'}
             </span>
           </div>
@@ -253,7 +253,7 @@ export default function NavigationGuidance({
             style={{
               fontSize: 15,
               fontWeight: 700,
-              color: '#f8fafc',
+              color: '#F8FAFC',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -277,7 +277,7 @@ export default function NavigationGuidance({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#cbd5e1',
+            color: '#CBD5E1',
             cursor: 'pointer',
             flexShrink: 0,
           }}
@@ -295,13 +295,13 @@ export default function NavigationGuidance({
             borderTop: '1px solid rgba(255, 255, 255, 0.06)',
             borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
             fontSize: 11.5,
-            color: '#94a3b8',
+            color: '#94A3B8',
             display: 'flex',
             alignItems: 'center',
             gap: 6,
           }}
         >
-          <span style={{ color: '#cbd5e1', fontWeight: 600 }}>Apoi:</span>
+          <span style={{ color: '#CBD5E1', fontWeight: 600 }}>Apoi:</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             {getManeuverIcon(nextStep.maneuver, 14)}
             <span>{nextStep.instructionRo}</span>
@@ -316,18 +316,18 @@ export default function NavigationGuidance({
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '8px 14px',
-          background: '#090d16',
+          background: '#0F172A',
           fontSize: 12,
         }}
       >
         {/* Remaining ETA and Distance */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#38bdf8', fontWeight: 700 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#93C5FD', fontWeight: 700 }}>
             <Clock size={13} />
             <span>{formatDuration(remainingSeconds)}</span>
           </div>
           <span style={{ color: '#475569' }}>•</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#cbd5e1', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#CBD5E1', fontWeight: 600 }}>
             <Navigation size={12} />
             <span>{formatDistance(remainingDist)}</span>
           </div>
@@ -341,8 +341,8 @@ export default function NavigationGuidance({
             title={voiceEnabled ? 'Ghidare vocală activă (Română)' : 'Ghidare vocală oprită'}
             style={{
               ...actionBtnStyle,
-              background: voiceEnabled ? '#2563eb' : 'rgba(255, 255, 255, 0.1)',
-              color: '#ffffff',
+              background: voiceEnabled ? '#1D4ED8' : 'rgba(255, 255, 255, 0.1)',
+              color: '#FFFFFF',
             }}
           >
             {voiceEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
@@ -354,8 +354,8 @@ export default function NavigationGuidance({
             title={followUser ? 'Urmărire automată hartă activă' : 'Centrează pe poziția ta'}
             style={{
               ...actionBtnStyle,
-              background: followUser ? '#0284c7' : 'rgba(255, 255, 255, 0.1)',
-              color: '#ffffff',
+              background: followUser ? '#1D4ED8' : 'rgba(255, 255, 255, 0.1)',
+              color: '#FFFFFF',
             }}
           >
             <Compass size={14} />
@@ -371,8 +371,8 @@ export default function NavigationGuidance({
                 width: 'auto',
                 padding: '0 8px',
                 gap: 5,
-                background: '#2563eb',
-                color: '#ffffff',
+                background: '#1D4ED8',
+                color: '#FFFFFF',
                 fontWeight: 700,
               }}
             >
@@ -391,8 +391,8 @@ export default function NavigationGuidance({
                 width: 'auto',
                 padding: '0 8px',
                 gap: 4,
-                background: isSimulating ? '#16a34a' : 'rgba(255, 255, 255, 0.12)',
-                color: '#ffffff',
+                background: isSimulating ? '#15803D' : 'rgba(255, 255, 255, 0.12)',
+                color: '#FFFFFF',
                 fontWeight: 700,
               }}
             >

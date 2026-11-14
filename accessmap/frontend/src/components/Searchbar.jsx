@@ -33,15 +33,15 @@ export default function SearchBar({ onSelectStart, onSelectDestination }) {
                 aria-label="Search for a destination"
                 style={{
                     flex: 1, padding: '16px', fontSize: '18px',
-                    borderRadius: '12px', border: '2px solid #333',
-                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                    borderRadius: '12px', border: '2px solid #334155',
+                    boxShadow: '0 4px 6px rgba(15, 23, 42, 0.1)'
                 }}
             />
             <button
                 type="submit"
                 aria-label="Search"
                 style={{
-                    padding: '16px', background: '#2563eb', color: 'white',
+                    padding: '16px', background: '#1D4ED8', color: 'white',
                     borderRadius: '12px', border: 'none', cursor: 'pointer',
                     minWidth: '56px', display: 'flex', justifyContent: 'center', alignItems: 'center'
                 }}

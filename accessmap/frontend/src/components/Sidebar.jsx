@@ -3,6 +3,7 @@ import ReportButton from './ReportButton';
 import LocationInput from './LocationInput';
 import { MapPin, Flag, RotateCcw, ChevronUp, ChevronDown, Camera, Eye, ShieldCheck } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { palette, radius } from '../theme';
 import { speechQueue, unlockAudioContext } from '../utils/speechQueue';
 import { requestOrientationPermission } from '../utils/orientationPermission';
 
@@ -41,7 +42,7 @@ export default function Sidebar({
       flexDirection: 'column',
       alignItems: 'center',
       pointerEvents: 'none',
-      fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+      fontFamily: 'inherit',
     }}>
       <div style={{
         width: '100%',
@@ -53,11 +54,11 @@ export default function Sidebar({
           <button
             onClick={toggleCollapsed}
             style={{
-              background: 'white', border: '1px solid #e5e7eb', borderBottom: 'none',
+              background: 'white', border: '1px solid #E2E8F0', borderBottom: 'none',
               borderRadius: '12px 12px 0 0', padding: isMobile ? '7px 20px' : '5px 24px', cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 6,
-              color: '#374151', fontSize: 13, fontWeight: 600,
-              boxShadow: '0 -2px 10px rgba(0,0,0,0.08)',
+              color: '#334155', fontSize: 13, fontWeight: 600,
+              boxShadow: '0 -2px 10px rgba(15, 23, 42, 0.08)',
             }}
           >
             {collapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -69,74 +70,50 @@ export default function Sidebar({
         {!collapsed && (
         <div style={{
           background: 'white',
-          border: '1px solid #e5e7eb',
+          border: '1px solid #E2E8F0',
           borderBottom: 'none',
           borderRadius: '20px 20px 0 0',
-          boxShadow: '0 -8px 30px rgba(0,0,0,0.12)',
+          boxShadow: '0 -8px 30px rgba(15, 23, 42, 0.12)',
           padding: isMobile ? '14px 14px calc(16px + env(safe-area-inset-bottom, 0px))' : '18px 24px 28px',
           maxHeight: isMobile ? '72dvh' : 'none',
           overflowY: isMobile ? 'auto' : 'visible',
         }}>
-          {/* Asistență Nevăzători: indicator mod activ & buton cameră */}
+          {/* Active mode: one quiet info row (the camera is opened by the button below) */}
           <div
             style={{
-              padding: '12px 14px',
-              borderRadius: 14,
-              background: '#0f172a',
-              color: '#ffffff',
+              padding: '10px 12px',
+              borderRadius: radius.md,
+              background: palette.primarySoft,
+              border: `1px solid ${palette.primarySoftBorder}`,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
+              gap: 10,
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 10,
-                  background: 'rgba(37, 99, 235, 0.25)',
-                  border: '1px solid #3b82f6',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#60a5fa',
-                  flexShrink: 0,
-                }}
-              >
-                <Eye size={20} />
-              </div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>
-                  Mod Asistență Nevăzători
-                </div>
-                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>
-                  Ghidare audio, menținere pe trotuar și evitare obstacole
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onToggleCamera}
+            <div
+              aria-hidden="true"
               style={{
-                background: cameraOpen ? '#2563eb' : 'rgba(255, 255, 255, 0.12)',
-                color: '#ffffff',
-                border: cameraOpen ? 'none' : '1px solid rgba(255, 255, 255, 0.2)',
-                borderRadius: 10,
-                padding: '8px 12px',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
+                width: 36,
+                height: 36,
+                borderRadius: radius.sm,
+                background: palette.primary,
+                color: palette.white,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
+                justifyContent: 'center',
                 flexShrink: 0,
               }}
             >
-              <Camera size={15} />
-              <span>{cameraOpen ? 'Cameră Activă' : 'Cameră AI'}</span>
-            </button>
+              <Eye size={19} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: palette.ink }}>
+                Mod asistență nevăzători
+              </div>
+              <div style={{ fontSize: 12.5, color: palette.slate600, marginTop: 1, lineHeight: 1.35 }}>
+                Ghidare vocală, menținere pe trotuar și avertizare la obstacole
+              </div>
+            </div>
           </div>
 
           {/* Location inputs with live autocomplete */}
@@ -144,8 +121,8 @@ export default function Sidebar({
             {/* Start location */}
             <LocationInput
               icon={MapPin}
-              iconColor="#16a34a"
-              iconBg="#dcfce7"
+              iconColor="#15803D"
+              iconBg="#F0FDF4"
               point={start}
               placeholder="Punct de plecare — caută adresa"
               userLocation={userLocation}
@@ -158,8 +135,8 @@ export default function Sidebar({
             {/* Destination */}
             <LocationInput
               icon={Flag}
-              iconColor="#2563eb"
-              iconBg="#dbeafe"
+              iconColor="#1D4ED8"
+              iconBg="#EFF6FF"
               point={destination}
               placeholder="Destinație — caută adresa"
               userLocation={userLocation}
@@ -188,10 +165,10 @@ export default function Sidebar({
               aria-pressed={cameraOpen}
               style={{
                 padding: '12px 18px',
-                background: cameraOpen ? '#1d4ed8' : '#eff6ff',
-                color: cameraOpen ? '#ffffff' : '#1d4ed8',
+                background: cameraOpen ? '#1D4ED8' : '#EFF6FF',
+                color: cameraOpen ? '#FFFFFF' : '#1D4ED8',
                 borderRadius: 12,
-                border: '2px solid #2563eb',
+                border: '2px solid #1D4ED8',
                 fontSize: 14,
                 fontWeight: 700,
                 display: 'flex',
@@ -200,7 +177,7 @@ export default function Sidebar({
                 cursor: 'pointer',
                 fontFamily: 'inherit',
                 whiteSpace: 'nowrap',
-                boxShadow: cameraOpen ? '0 4px 14px rgba(37, 99, 235, 0.35)' : 'none',
+                boxShadow: cameraOpen ? '0 4px 14px rgba(29, 78, 216, 0.35)' : 'none',
               }}
             >
               <Camera size={18} />
@@ -210,8 +187,8 @@ export default function Sidebar({
               <button
                 onClick={onClearRoute}
                 style={{
-                  padding: '12px 20px', background: '#f3f4f6', color: '#374151',
-                  borderRadius: 12, border: '2px solid #e5e7eb', fontSize: 14, fontWeight: 600,
+                  padding: '12px 20px', background: '#F1F5F9', color: '#334155',
+                  borderRadius: 12, border: '2px solid #E2E8F0', fontSize: 14, fontWeight: 600,
                   display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
                   fontFamily: 'inherit', whiteSpace: 'nowrap',
                 }}

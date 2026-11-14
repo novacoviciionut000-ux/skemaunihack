@@ -55,7 +55,7 @@ export default function UserNav({
         top: isMobile ? 12 : 16,
         right: isMobile ? 12 : 16,
         zIndex: 1002,
-        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+        fontFamily: 'inherit',
       }}
     >
       {!isAuthenticated ? (
@@ -67,27 +67,27 @@ export default function UserNav({
               alignItems: 'center',
               gap: isMobile ? 5 : 8,
               padding: isMobile ? '8px 12px' : '9px 18px',
-              backgroundColor: '#ffffff',
-              color: '#1e293b',
-              border: '1.5px solid #e2e8f0',
+              backgroundColor: '#FFFFFF',
+              color: '#1E293B',
+              border: '1.5px solid #E2E8F0',
               borderRadius: 30,
               fontSize: isMobile ? 12.5 : 14,
               fontWeight: 600,
               cursor: 'pointer',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+              boxShadow: '0 4px 16px rgba(15, 23, 42, 0.08)',
               transition: 'all 0.2s ease',
               whiteSpace: 'nowrap',
             }}
             onMouseOver={(e) => {
-              e.currentTarget.style.borderColor = '#2563eb';
-              e.currentTarget.style.boxShadow = '0 6px 20px rgba(37,99,235,0.15)';
+              e.currentTarget.style.borderColor = '#1D4ED8';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(29, 78, 216, 0.15)';
             }}
             onMouseOut={(e) => {
-              e.currentTarget.style.borderColor = '#e2e8f0';
-              e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)';
+              e.currentTarget.style.borderColor = '#E2E8F0';
+              e.currentTarget.style.boxShadow = '0 4px 16px rgba(15, 23, 42, 0.08)';
             }}
           >
-            <LogIn size={isMobile ? 14 : 16} style={{ color: '#2563eb' }} />
+            <LogIn size={isMobile ? 14 : 16} style={{ color: '#1D4ED8' }} />
             <span>Conectare</span>
           </button>
 
@@ -98,22 +98,22 @@ export default function UserNav({
               alignItems: 'center',
               gap: isMobile ? 5 : 6,
               padding: isMobile ? '8px 12px' : '9px 18px',
-              backgroundColor: '#2563eb',
-              color: '#ffffff',
+              backgroundColor: '#1D4ED8',
+              color: '#FFFFFF',
               border: 'none',
               borderRadius: 30,
               fontSize: isMobile ? 12.5 : 14,
               fontWeight: 600,
               cursor: 'pointer',
-              boxShadow: '0 4px 16px rgba(37,99,235,0.3)',
+              boxShadow: '0 4px 16px rgba(29, 78, 216, 0.3)',
               transition: 'all 0.2s ease',
               whiteSpace: 'nowrap',
             }}
             onMouseOver={(e) => {
-              e.currentTarget.style.backgroundColor = '#1d4ed8';
+              e.currentTarget.style.backgroundColor = '#1D4ED8';
             }}
             onMouseOut={(e) => {
-              e.currentTarget.style.backgroundColor = '#2563eb';
+              e.currentTarget.style.backgroundColor = '#1D4ED8';
             }}
           >
             <Sparkles size={15} />
@@ -130,11 +130,11 @@ export default function UserNav({
               alignItems: 'center',
               gap: 10,
               padding: '6px 14px 6px 6px',
-              backgroundColor: '#ffffff',
-              border: '1.5px solid #e2e8f0',
+              backgroundColor: '#FFFFFF',
+              border: '1.5px solid #E2E8F0',
               borderRadius: 30,
               cursor: 'pointer',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+              boxShadow: '0 4px 16px rgba(15, 23, 42, 0.08)',
               transition: 'all 0.2s ease',
             }}
           >
@@ -149,30 +149,30 @@ export default function UserNav({
                 width: 32,
                 height: 32,
                 borderRadius: '50%',
-                backgroundColor: '#eff6ff',
-                color: '#2563eb',
+                backgroundColor: '#EFF6FF',
+                color: '#1D4ED8',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 700,
                 fontSize: 13,
-                border: '1.5px solid #bfdbfe'
+                border: '1.5px solid #BFDBFE'
               }}>
                 {getInitials(user?.fullName || user?.username)}
               </div>
             )}
 
             <div style={{ textAlign: 'left', marginRight: 4 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>
                 {user?.fullName || user?.username}
               </div>
-              <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>
+              <div style={{ fontSize: 11, color: '#64748B', fontWeight: 500 }}>
                 {getProfileLabel(currentProfile)}
               </div>
             </div>
 
             <ChevronDown size={15} style={{
-              color: '#94a3b8',
+              color: '#94A3B8',
               transform: dropdownOpen ? 'rotate(180deg)' : 'none',
               transition: 'transform 0.2s'
             }} />
@@ -186,9 +186,9 @@ export default function UserNav({
                 top: 'calc(100% + 8px)',
                 right: 0,
                 width: 270,
-                backgroundColor: '#ffffff',
+                backgroundColor: '#FFFFFF',
                 borderRadius: 18,
-                boxShadow: '0 20px 40px -10px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)',
+                boxShadow: '0 20px 40px -10px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.06)',
                 padding: '8px',
                 overflow: 'hidden',
                 animation: 'fadeIn 0.15s ease-out',
@@ -197,14 +197,14 @@ export default function UserNav({
               {/* Header card utilizator */}
               <div style={{
                 padding: '12px 14px',
-                backgroundColor: '#f8fafc',
+                backgroundColor: '#F8FAFC',
                 borderRadius: 12,
                 marginBottom: 8,
               }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>
                   {user?.fullName || user?.username}
                 </div>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2, wordBreak: 'break-all' }}>
+                <div style={{ fontSize: 12, color: '#64748B', marginTop: 2, wordBreak: 'break-all' }}>
                   {user?.email}
                 </div>
                 <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -215,8 +215,8 @@ export default function UserNav({
                     letterSpacing: 0.5,
                     padding: '2px 8px',
                     borderRadius: 6,
-                    backgroundColor: user?.provider === 'GOOGLE' ? '#e0f2fe' : user?.provider === 'FACEBOOK' ? '#e0e7ff' : '#f1f5f9',
-                    color: user?.provider === 'GOOGLE' ? '#0369a1' : user?.provider === 'FACEBOOK' ? '#4338ca' : '#475569',
+                    backgroundColor: user?.provider === 'GOOGLE' ? '#EFF6FF' : user?.provider === 'FACEBOOK' ? '#EFF6FF' : '#F1F5F9',
+                    color: user?.provider === 'GOOGLE' ? '#1D4ED8' : user?.provider === 'FACEBOOK' ? '#1D4ED8' : '#475569',
                   }}>
                     {user?.provider || 'LOCAL'}
                   </span>
@@ -225,10 +225,10 @@ export default function UserNav({
                     fontWeight: 600,
                     padding: '2px 8px',
                     borderRadius: 6,
-                    backgroundColor: '#dcfce7',
-                    color: '#15803d',
+                    backgroundColor: '#F0FDF4',
+                    color: '#15803D',
                   }}>
-                    ✓ Verificat
+                    Verificat
                   </span>
                 </div>
               </div>
@@ -238,24 +238,24 @@ export default function UserNav({
                 margin: '4px 0 8px',
                 padding: '10px 12px',
                 borderRadius: 10,
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
+                background: '#EFF6FF',
+                border: '1px solid #BFDBFE',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
               }}>
-                <Eye size={16} color="#2563eb" />
+                <Eye size={16} color="#1D4ED8" />
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#1e40af' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#1E40AF' }}>
                     Profil Nevăzători Activ
                   </div>
-                  <div style={{ fontSize: 10.5, color: '#3b82f6' }}>
+                  <div style={{ fontSize: 10.5, color: '#1D4ED8' }}>
                     Ghidare vocală & alertă părăsire trotuar
                   </div>
                 </div>
               </div>
 
-              <div style={{ height: 1, backgroundColor: '#f1f5f9', margin: '8px 0' }} />
+              <div style={{ height: 1, backgroundColor: '#F1F5F9', margin: '8px 0' }} />
 
               {/* Buton Profil & Securitate */}
               <button
@@ -278,10 +278,10 @@ export default function UserNav({
                   cursor: 'pointer',
                   transition: 'background 0.15s',
                 }}
-                onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc'; }}
+                onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
                 onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
               >
-                <Settings size={16} style={{ color: '#64748b' }} />
+                <Settings size={16} style={{ color: '#64748B' }} />
                 <span>Profil & Securitate</span>
               </button>
 
@@ -300,13 +300,13 @@ export default function UserNav({
                   border: 'none',
                   borderRadius: 8,
                   backgroundColor: 'transparent',
-                  color: '#ef4444',
+                  color: '#B91C1C',
                   fontSize: 13,
                   fontWeight: 600,
                   cursor: 'pointer',
                   transition: 'background 0.15s',
                 }}
-                onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; }}
+                onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#FEF2F2'; }}
                 onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
               >
                 <LogOut size={16} />

@@ -91,7 +91,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
         backdropFilter: 'blur(8px)',
         padding: '16px',
         animation: 'fadeIn 0.2s ease-out',
-        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+        fontFamily: 'inherit',
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -104,32 +104,32 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
         style={{
           width: '100%',
           maxWidth: 480,
-          backgroundColor: '#ffffff',
+          backgroundColor: '#FFFFFF',
           borderRadius: 24,
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.25)',
           overflow: 'hidden',
         }}
       >
         {/* Header */}
         <div style={{
           padding: '22px 28px',
-          borderBottom: '1px solid #f1f5f9',
+          borderBottom: '1px solid #F1F5F9',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
-              width: 36, height: 36, borderRadius: 10, backgroundColor: '#eff6ff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb'
+              width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFF6FF',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1D4ED8'
             }}>
               <User size={20} />
             </div>
             <div>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0F172A' }}>
                 Profil & Securitate
               </h2>
-              <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
+              <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>
                 Gestionează-ți contul și preferințele de navigare
               </p>
             </div>
@@ -139,7 +139,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
             onClick={onClose}
             aria-label="Închide"
             style={{
-              background: '#f8fafc',
+              background: '#F8FAFC',
               border: 'none',
               borderRadius: '50%',
               width: 32,
@@ -148,7 +148,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              color: '#64748b',
+              color: '#64748B',
             }}
           >
             <X size={18} />
@@ -160,8 +160,8 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
           {error && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10,
-              backgroundColor: '#fef2f2', border: '1px solid #fee2e2',
-              color: '#b91c1c', padding: '10px 14px', borderRadius: 10,
+              backgroundColor: '#FEF2F2', border: '1px solid #FEF2F2',
+              color: '#B91C1C', padding: '10px 14px', borderRadius: 10,
               fontSize: 13
             }}>
               <AlertCircle size={18} style={{ flexShrink: 0 }} />
@@ -171,8 +171,8 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
           {success && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10,
-              backgroundColor: '#f0fdf4', border: '1px solid #dcfce7',
-              color: '#15803d', padding: '10px 14px', borderRadius: 10,
+              backgroundColor: '#F0FDF4', border: '1px solid #F0FDF4',
+              color: '#15803D', padding: '10px 14px', borderRadius: 10,
               fontSize: 13
             }}>
               <Check size={18} style={{ flexShrink: 0 }} />
@@ -186,7 +186,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
           {/* Informații statice despre cont */}
           <div style={{
             padding: '12px 14px',
-            backgroundColor: '#f8fafc',
+            backgroundColor: '#F8FAFC',
             borderRadius: 14,
             display: 'flex',
             justifyContent: 'space-between',
@@ -194,12 +194,12 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
             fontSize: 13
           }}>
             <div>
-              <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>UTILIZATOR & EMAIL</div>
-              <div style={{ fontWeight: 700, color: '#0f172a', marginTop: 2 }}>@{user.username}</div>
+              <div style={{ color: '#64748B', fontSize: 11, fontWeight: 600 }}>UTILIZATOR & EMAIL</div>
+              <div style={{ fontWeight: 700, color: '#0F172A', marginTop: 2 }}>@{user.username}</div>
               <div style={{ color: '#475569', fontSize: 12 }}>{user.email}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>METODĂ LOGIN</div>
+              <div style={{ color: '#64748B', fontSize: 11, fontWeight: 600 }}>METODĂ LOGIN</div>
               <span style={{
                 display: 'inline-block',
                 marginTop: 3,
@@ -207,7 +207,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
                 fontWeight: 700,
                 padding: '3px 8px',
                 borderRadius: 6,
-                backgroundColor: '#e2e8f0',
+                backgroundColor: '#E2E8F0',
                 color: '#334155'
               }}>
                 {user.provider || 'LOCAL'}
@@ -229,7 +229,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
                 width: '100%',
                 padding: '10px 12px',
                 borderRadius: 10,
-                border: '1.5px solid #cbd5e1',
+                border: '1.5px solid #CBD5E1',
                 fontSize: 14,
                 fontFamily: 'inherit',
               }}
@@ -237,7 +237,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
           </div>
 
           {/* Tip de cont + puncte de faptă bună */}
-          <div style={{ padding: '12px 14px', borderRadius: 12, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+          <div style={{ padding: '12px 14px', borderRadius: 12, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Tip de cont</div>
             <div role="radiogroup" style={{ display: 'flex', gap: 8 }}>
               {[
@@ -254,8 +254,8 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
                     flex: 1,
                     padding: '9px 10px',
                     borderRadius: 10,
-                    border: accountType === opt.id ? '2px solid #2563eb' : '1.5px solid #cbd5e1',
-                    background: accountType === opt.id ? '#eff6ff' : '#ffffff',
+                    border: accountType === opt.id ? '2px solid #1D4ED8' : '1.5px solid #CBD5E1',
+                    background: accountType === opt.id ? '#EFF6FF' : '#FFFFFF',
                     fontWeight: 700,
                     fontSize: 13,
                     cursor: 'pointer',
@@ -277,18 +277,18 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
           <div style={{
             padding: '12px 14px',
             borderRadius: 12,
-            background: '#f8fafc',
-            border: '1px solid #e2e8f0',
+            background: '#F8FAFC',
+            border: '1px solid #E2E8F0',
             display: 'flex',
             alignItems: 'center',
             gap: 10,
           }}>
-            <Eye size={18} color="#2563eb" />
+            <Eye size={18} color="#1D4ED8" />
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1E40AF' }}>
                 Profil: Asistență Nevăzători
               </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>
+              <div style={{ fontSize: 11, color: '#64748B' }}>
                 Configurat automat pentru sinteză vocală în limba română și monitorizare trotuar.
               </div>
             </div>
@@ -297,13 +297,13 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
           {/* Schimbare Parolă (doar dacă e cont LOCAL) */}
           {isLocal && (
             <div style={{
-              borderTop: '1px solid #f1f5f9',
+              borderTop: '1px solid #F1F5F9',
               paddingTop: 12,
               display: 'flex',
               flexDirection: 'column',
               gap: 10
             }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>
                 Schimbare Parolă (opțional)
               </div>
 
@@ -317,7 +317,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
                     width: '100%',
                     padding: '9px 12px',
                     borderRadius: 10,
-                    border: '1.5px solid #cbd5e1',
+                    border: '1.5px solid #CBD5E1',
                     fontSize: 13,
                     fontFamily: 'inherit',
                   }}
@@ -334,7 +334,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
                     flex: 1,
                     padding: '9px 12px',
                     borderRadius: 10,
-                    border: '1.5px solid #cbd5e1',
+                    border: '1.5px solid #CBD5E1',
                     fontSize: 13,
                     fontFamily: 'inherit',
                   }}
@@ -348,7 +348,7 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
                     flex: 1,
                     padding: '9px 12px',
                     borderRadius: 10,
-                    border: '1.5px solid #cbd5e1',
+                    border: '1.5px solid #CBD5E1',
                     fontSize: 13,
                     fontFamily: 'inherit',
                   }}
@@ -365,8 +365,8 @@ export default function ProfileModal({ isOpen, onClose, onProfileUpdated }) {
               marginTop: 8,
               width: '100%',
               padding: '12px 20px',
-              backgroundColor: '#2563eb',
-              color: '#ffffff',
+              backgroundColor: '#1D4ED8',
+              color: '#FFFFFF',
               border: 'none',
               borderRadius: 12,
               fontSize: 14,

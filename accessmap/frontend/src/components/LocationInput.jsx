@@ -164,11 +164,11 @@ export default function LocationInput({
               padding: '11px 40px 11px 14px',
               fontSize: 14,
               borderRadius: 12,
-              border: isOpen ? `2px solid ${iconColor}` : '2px solid #e5e7eb',
+              border: isOpen ? `2px solid ${iconColor}` : '2px solid #E2E8F0',
               outline: 'none',
               fontFamily: 'inherit',
               transition: 'all 0.15s ease',
-              background: '#f9fafb',
+              background: '#F8FAFC',
               boxSizing: 'border-box',
             }}
           />
@@ -176,7 +176,7 @@ export default function LocationInput({
           {/* Right action indicator (loader or clear button) */}
           <div style={{ position: 'absolute', right: 12, display: 'flex', alignItems: 'center' }}>
             {isLoading ? (
-              <Loader2 size={16} color="#9ca3af" style={{ animation: 'spin 1s linear infinite' }} />
+              <Loader2 size={16} color="#94A3B8" style={{ animation: 'spin 1s linear infinite' }} />
             ) : query ? (
               <button
                 type="button"
@@ -188,7 +188,7 @@ export default function LocationInput({
                   padding: 2,
                   display: 'flex',
                   alignItems: 'center',
-                  color: '#9ca3af',
+                  color: '#94A3B8',
                 }}
               >
                 <X size={16} />
@@ -207,8 +207,8 @@ export default function LocationInput({
           right: 0,
           background: 'white',
           borderRadius: 14,
-          border: '1px solid #e2e8f0',
-          boxShadow: '0 14px 35px rgba(0,0,0,0.14)',
+          border: '1px solid #E2E8F0',
+          boxShadow: '0 14px 35px rgba(15, 23, 42, 0.14)',
           zIndex: 2000,
           overflow: 'hidden',
           maxHeight: 280,
@@ -218,11 +218,11 @@ export default function LocationInput({
           {/* Section header */}
           <div style={{
             padding: '7px 12px',
-            background: '#f8fafc',
-            borderBottom: '1px solid #f1f5f9',
+            background: '#F8FAFC',
+            borderBottom: '1px solid #F1F5F9',
             fontSize: 10.5,
             fontWeight: 700,
-            color: '#64748b',
+            color: '#64748B',
             letterSpacing: '0.4px',
             textTransform: 'uppercase',
             display: 'flex',
@@ -230,7 +230,7 @@ export default function LocationInput({
             justifyContent: 'space-between',
           }}>
             <span>Locații apropiate (după distanță)</span>
-            <span style={{ fontSize: 10, color: '#94a3b8' }}>Cele mai apropiate primele</span>
+            <span style={{ fontSize: 10, color: '#94A3B8' }}>Cele mai apropiate primele</span>
           </div>
 
           {suggestions.map((item, idx) => {
@@ -251,18 +251,18 @@ export default function LocationInput({
                   justifyContent: 'space-between',
                   gap: 10,
                   cursor: 'pointer',
-                  background: isActive ? '#eff6ff' : 'transparent',
-                  borderBottom: idx < suggestions.length - 1 ? '1px solid #f3f4f6' : 'none',
+                  background: isActive ? '#EFF6FF' : 'transparent',
+                  borderBottom: idx < suggestions.length - 1 ? '1px solid #F1F5F9' : 'none',
                   transition: 'background 0.1s ease',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0, flex: 1 }}>
-                  <MapPin size={16} color={isActive ? '#2563eb' : '#9ca3af'} style={{ marginTop: 2, flexShrink: 0 }} />
+                  <MapPin size={16} color={isActive ? '#1D4ED8' : '#94A3B8'} style={{ marginTop: 2, flexShrink: 0 }} />
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{
                       fontSize: 13,
                       fontWeight: 600,
-                      color: isActive ? '#1d4ed8' : '#1f2937',
+                      color: isActive ? '#1D4ED8' : '#1E293B',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -272,7 +272,7 @@ export default function LocationInput({
                     {secondaryTitle && (
                       <div style={{
                         fontSize: 11,
-                        color: '#6b7280',
+                        color: '#64748B',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -289,8 +289,8 @@ export default function LocationInput({
                   <div style={{
                     fontSize: 11,
                     fontWeight: 700,
-                    color: isActive ? '#1d4ed8' : '#3b82f6',
-                    background: isActive ? '#dbeafe' : '#eff6ff',
+                    color: isActive ? '#1D4ED8' : '#1D4ED8',
+                    background: isActive ? '#EFF6FF' : '#EFF6FF',
                     padding: '3px 7px',
                     borderRadius: 8,
                     flexShrink: 0,
