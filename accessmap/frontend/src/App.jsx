@@ -80,6 +80,21 @@ export default function App() {
     speechQueue.setVoiceEnabled(voiceGuidanceEnabled);
   }, [voiceGuidanceEnabled]);
 
+  // Deblochează automat audio și sinteza vocală pe telefon la prima atingere/click
+  useEffect(() => {
+    const handleUnlockAudio = () => {
+      speechQueue.unlock();
+    };
+    window.addEventListener('touchstart', handleUnlockAudio, { capture: true, passive: true });
+    window.addEventListener('touchend', handleUnlockAudio, { capture: true, passive: true });
+    window.addEventListener('click', handleUnlockAudio, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('touchstart', handleUnlockAudio, true);
+      window.removeEventListener('touchend', handleUnlockAudio, true);
+      window.removeEventListener('click', handleUnlockAudio, true);
+    };
+  }, []);
+
   // Load obstacle reports on mount
   useEffect(() => {
     getReports().then(setObstacles).catch((err) => console.error('Failed to load reports:', err));
@@ -162,6 +177,8 @@ export default function App() {
 
       // Anunț vocal în limba română la activarea automată a camerei pe traseu (prin coada unificată)
       if (voiceGuidanceEnabled) {
+        speechQueue.unlock();
+        speechQueue.playBeep('success');
         const dist = routeData.distanceMeters ? `${Math.round(routeData.distanceMeters)} metri` : '';
         const mins = routeData.timeSeconds ? Math.max(1, Math.round(routeData.timeSeconds / 60)) : '';
         const firstManeuver = steps[0]?.instructionRo || 'Porniți drept înainte pe traseu';
