@@ -43,7 +43,10 @@ function prepare(raw) {
 }
 
 // ─── Command phrases (matched as whole words, never inside other words) ────────
-const EMERGENCY = ['ajutor', 'urgenta', '112', 'sos', 'help'];
+// Real emergencies: always the 112 screen
+const EMERGENCY = ['urgenta', '112', 'sos', 'ambulanta', 'ambulanta', 'salvarea', 'politia', 'pompierii', 'suna la 112'];
+// Just "ajutor" / "help": a client gets a volunteer, everyone else the 112 screen
+const BARE_HELP = ['ajutor', 'help', 'ajutor ajutor'];
 const CAMERA_OPEN = [
   'deschide camera', 'porneste camera', 'activeaza camera', 'deschide cam', 'camera on',
   'vreau camera', 'deschide mi camera', 'arata camera', 'arata mi camera', 'open camera',
@@ -62,13 +65,41 @@ const NAV_GUIDANCE = [
   'navigare pas cu pas', 'pe unde tre sa o iau', 'pe unde trebe sa o iau',
 ];
 // Help system ("buton de ajutor" for clients, deeds for volunteers). "ajutor" alone stays 112.
+// Client
 const CALL_VOLUNTEER = [
-  'cheama un voluntar', 'cheama voluntar', 'cheama voluntarul', 'am nevoie de un voluntar',
-  'am nevoie de voluntar', 'vreau un voluntar', 'trimite un voluntar', 'cer ajutor', 'cere ajutor',
-  'semnal de ajutor', 'trimite semnal', 'trimite alerta', 'am nevoie de ajutor', 'call a volunteer',
+  'cheama un voluntar', 'cheama voluntar', 'cheama voluntarul', 'cheama pe cineva', 'cheama ajutor',
+  'am nevoie de un voluntar', 'am nevoie de voluntar', 'am nevoie de ajutor', 'am nevoie de cineva',
+  'am nevoie de o mana de ajutor', 'imi trebuie ajutor', 'vreau ajutor', 'vreau un voluntar',
+  'trimite un voluntar', 'trimite pe cineva', 'trimite ajutor', 'sa vina cineva', 'vreau sa vina cineva',
+  'cer ajutor', 'cere ajutor', 'semnal de ajutor', 'trimite semnal', 'trimite alerta', 'trimite semnalul',
+  'ajuta ma', 'ajutati ma', 'ma ajuta cineva', 'poate sa ma ajute cineva', 'ajutor te rog', 'ajutor va rog',
+  'i need help', 'call a volunteer', 'send help',
 ];
-const CANCEL_HELP = ['anuleaza cererea', 'anuleaza ajutorul', 'anuleaza semnalul', 'nu mai am nevoie de ajutor'];
-const DEED_FINISHED = ['fapta e gata', 'fapta este gata', 'fapta terminata', 'am terminat fapta', 'am terminat', 'am ajutat', 'deed finished'];
+const CANCEL_HELP = [
+  'anuleaza cererea', 'anuleaza ajutorul', 'anuleaza semnalul', 'anuleaza voluntarul',
+  'nu mai am nevoie de ajutor', 'nu mai am nevoie', 'opreste cererea', 'opreste semnalul',
+];
+const HELP_STATUS = [
+  'unde e voluntarul', 'unde este voluntarul', 'cand vine voluntarul', 'vine cineva', 'vine voluntarul',
+  'a acceptat cineva', 'cat mai dureaza voluntarul', 'cat de departe e voluntarul', 'ce face cererea',
+  'stadiul cererii', 'status cerere',
+];
+// Volunteer
+const DEED_FINISHED = [
+  'fapta e gata', 'fapta este gata', 'fapta terminata', 'am terminat fapta', 'am terminat', 'am ajutat',
+  'gata am ajutat', 'am rezolvat', 'deed finished',
+];
+const ACCEPT_HELP = [
+  'accept', 'accept cererea', 'accepta', 'accepta cererea', 'preiau', 'preiau cererea', 'ajut eu',
+  'o ajut', 'il ajut', 'ajut', 'merg eu', 'ma duc eu', 'vin eu',
+];
+const RELEASE_HELP = [
+  'nu mai pot ajunge', 'nu pot ajunge', 'nu pot sa ajung', 'renunt', 'renunt la cerere', 'nu mai pot',
+  'trimite la altcineva', 'da o altcuiva',
+];
+const DUTY_ON = ['intru in serviciu', 'intra in serviciu', 'sunt disponibil', 'sunt in serviciu', 'porneste serviciul'];
+const DUTY_OFF = ['ies din serviciu', 'iesi din serviciu', 'nu sunt disponibil', 'opreste serviciul', 'termin serviciul'];
+const MY_POINTS = ['cate puncte am', 'punctele mele', 'ce nivel am', 'cate fapte am', 'scorul meu'];
 
 export const YES = ['da', 'da te rog', 'confirm', 'confirma', 'corect', 'exact', 'ok', 'bine', 'mergem', 'porneste', 'hai', 'asa e', 'perfect', 'yes'];
 export const NO = ['nu', 'nu e bine', 'anuleaza', 'opreste', 'gresit', 'altceva', 'alta adresa', 'no'];
@@ -253,8 +284,9 @@ function destinationFromIntent(words) {
  * @param {{ awaitingConfirmation?: boolean }} [ctx]
  * @returns {{ type: string, transcript: string, destination?: {query, near, knownPlace}, newDestination?: object|null }}
  *   type: confirm-yes | confirm-no | destination | emergency | camera-open | camera-close |
- *         cancel-route | status | start-navigation | call-volunteer | cancel-help |
- *         deed-finished | unknown
+ *         cancel-route | status | start-navigation | call-volunteer | cancel-help | help-status |
+ *         deed-finished | accept-help | release-help | duty-on | duty-off | my-points | unknown
+ * ctx.isClient: logged in as a client, so a bare "ajutor" calls a volunteer instead of 112
  */
 export function parseVoiceCommand(transcript, ctx = {}) {
   const text = prepare(transcript);
@@ -274,8 +306,14 @@ export function parseVoiceCommand(transcript, ctx = {}) {
 
   // Control phrases first: "anuleaza ruta" also contains the go-word "ruta"
   if (hasPhrase(text, CANCEL_HELP)) return result('cancel-help');
-  if (hasPhrase(text, CALL_VOLUNTEER)) return result('call-volunteer');
+  if (hasPhrase(text, HELP_STATUS)) return result('help-status');
   if (hasPhrase(text, DEED_FINISHED)) return result('deed-finished');
+  if (hasPhrase(text, RELEASE_HELP)) return result('release-help');
+  if (hasPhrase(text, DUTY_OFF)) return result('duty-off');
+  if (hasPhrase(text, DUTY_ON)) return result('duty-on');
+  if (hasPhrase(text, MY_POINTS)) return result('my-points');
+  // Whole utterance only: "ajut" must not fire inside "ajuta-ma sa ajung la ..."
+  if (startsWithPhrase(text, ACCEPT_HELP) && words.length <= 3) return result('accept-help');
   if (hasPhrase(text, CANCEL_ROUTE)) return result('cancel-route');
   if (hasPhrase(text, CAMERA_CLOSE)) return result('camera-close');
   if (hasPhrase(text, CAMERA_OPEN)) return result('camera-open');
@@ -288,6 +326,11 @@ export function parseVoiceCommand(transcript, ctx = {}) {
   if (intent) return result('destination', { destination: intent });
 
   if (hasPhrase(text, EMERGENCY)) return result('emergency');
+  // After destinations, so "ajuta-ma sa ajung la gara" navigates instead of calling a volunteer
+  if (hasPhrase(text, CALL_VOLUNTEER)) return result('call-volunteer');
+  if (BARE_HELP.includes(text) || hasPhrase(text, BARE_HELP)) {
+    return result(ctx.isClient ? 'call-volunteer' : 'emergency');
+  }
 
   // No command words at all: treat the whole phrase as a place name ("Kaufland"). Noise
   // ("eee", "hmm", one stray syllable) is noise, not a destination.

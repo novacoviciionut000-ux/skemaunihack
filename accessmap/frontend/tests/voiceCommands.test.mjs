@@ -24,18 +24,32 @@ const cases = [
   ['Kaufland', 'destination', 'Kaufland'],
   ['take me to the nearest Kaufland', 'destination', 'Kaufland'],
   ['navigate to McDonalds', 'destination', 'McDonalds'],
-  ['ajutor', 'emergency'],
-  ['sună la 112', 'emergency'],
   ['deschide camera', 'camera-open'],
   ['închide camera', 'camera-close'],
   ['anulează ruta', 'cancel-route'],
   ['cât mai am', 'status'],
   ['pe unde o iau', 'start-navigation'],
   ['cheamă un voluntar', 'call-volunteer'],
-  ['am nevoie de ajutor', 'call-volunteer'],
+  ['Am nevoie de ajutor', 'call-volunteer'],
+  ['am nevoie de ajutor te rog', 'call-volunteer'],
+  ['ajută-mă', 'call-volunteer'],
+  ['vreau ajutor', 'call-volunteer'],
+  ['trimite pe cineva', 'call-volunteer'],
+  ['ajută-mă să ajung la Kaufland', 'destination', 'Kaufland'],
   ['anulează cererea', 'cancel-help'],
+  ['nu mai am nevoie de ajutor', 'cancel-help'],
+  ['unde e voluntarul', 'help-status'],
   ['fapta e gata', 'deed-finished'],
+  ['am terminat', 'deed-finished'],
+  ['accept', 'accept-help'],
+  ['ajut eu', 'accept-help'],
+  ['nu mai pot ajunge', 'release-help'],
+  ['ies din serviciu', 'duty-off'],
+  ['intru în serviciu', 'duty-on'],
+  ['câte puncte am', 'my-points'],
   ['ajutor', 'emergency'],
+  ['sună la 112', 'emergency'],
+  ['urgență', 'emergency'],
   ['', 'unknown'],
   ['eee', 'unknown'],
   ['hmm', 'unknown'],
@@ -49,10 +63,26 @@ for (const [heard, type, query, near] of cases) {
   console.log(ok ? 'ok  ' : 'FAIL', JSON.stringify(heard).padEnd(52), '->', r.type, r.destination ? `"${r.destination.query}"${r.destination.near ? ` near "${r.destination.near}"` : ''}` : '');
 }
 // Alternatives: recognizer's first guess is wrong, a later one names the store
+// Context: a logged-in client saying just "ajutor" gets a volunteer, not 112
+const clientHelp = parseVoiceCommand('Ajutor!', { isClient: true });
+const chOk = clientHelp.type === 'call-volunteer';
+if (!chOk) fail++;
+console.log(chOk ? 'ok  ' : 'FAIL', '"Ajutor!" as a client ->', clientHelp.type);
+const urgent = parseVoiceCommand('sună la 112', { isClient: true });
+const urOk = urgent.type === 'emergency';
+if (!urOk) fail++;
+console.log(urOk ? 'ok  ' : 'FAIL', '"sună la 112" as a client ->', urgent.type);
+// While the app waits for "a fost rezolvat?": da / nu
+for (const [said, want] of [['Da', 'confirm-yes'], ['da, a fost rezolvat', 'confirm-yes'], ['Nu', 'confirm-no'], ['nu încă', 'confirm-no']]) {
+  const r = parseVoiceCommand(said, { awaitingConfirmation: true });
+  if (r.type !== want) fail++;
+  console.log(r.type === want ? 'ok  ' : 'FAIL', `"${said}" while awaiting confirmation ->`, r.type);
+}
+
 const alt = pickBestCommand(['du mă la cauza', 'du-mă la Kaufland', 'du-mă la cafea']);
 const altOk = alt.type === 'destination' && alt.destination.query === 'Kaufland';
 if (!altOk) fail++;
 console.log(altOk ? 'ok  ' : 'FAIL', 'pickBestCommand prefers the alternative that names a known store ->', alt.destination?.query);
-console.log(fail ? `\n${fail} FAILED` : `\nall ${cases.length + 1} passed`);
+console.log(fail ? `\n${fail} FAILED` : `\nall ${cases.length + 7} passed`);
 
 process.exit(fail ? 1 : 0);

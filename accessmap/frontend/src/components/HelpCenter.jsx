@@ -9,13 +9,14 @@ import {
   volunteerLeaderboard,
 } from '../api/client';
 import { speechQueue, playAlarmBeep } from '../utils/speechQueue';
-import { listenOnce } from '../utils/listenOnce';
-import { pickBestCommand } from '../utils/voiceCommands';
-import { helpConfirmBridge, HELP_COMMAND_EVENT } from '../utils/helpVoiceBridge';
+import { helpConfirmBridge, HELP_COMMAND_EVENT, requestVoiceListen } from '../utils/helpVoiceBridge';
 
 const CLIENT_POLL_MS = 4000;
 const VOLUNTEER_POLL_MS = 8000;
 const DISTANCE_MILESTONES = [1000, 500, 200, 50];
+// After asking "A fost rezolvat?": how long to wait for an answer, and how many times to ask
+const CONFIRM_LISTEN_MS = 9000;
+const CONFIRM_ATTEMPTS = 3;
 
 function say(text, opts = {}) {
   speechQueue.speak(text, { priority: 'urgent', ...opts });
@@ -36,6 +37,21 @@ function shortMeters(m) {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 }
 
+/** Spoken summary of the client's request. */
+function describe(r) {
+  if (!r) return '';
+  if (r.status === 'OPEN') {
+    return r.nearbyVolunteers > 0
+      ? `Căutăm un voluntar. ${r.nearbyVolunteers === 1 ? 'Un voluntar a fost anunțat' : `${r.nearbyVolunteers} voluntari au fost anunțați`}.`
+      : 'Încă nu e niciun voluntar aproape. Cererea rămâne activă.';
+  }
+  if (r.status === 'ACCEPTED') {
+    return `${r.volunteerName} vine spre tine${r.volunteerDistanceMeters != null ? `, la ${spokenMeters(r.volunteerDistanceMeters)}` : ''}.`;
+  }
+  if (r.status === 'AWAITING_CONFIRMATION') return `${r.volunteerName} spune că a terminat. Spune Da dacă a fost rezolvat, sau Nu.`;
+  return '';
+}
+
 function getPosition(known) {
   if (known && known.lat != null) return Promise.resolve({ lat: known.lat, lng: known.lng });
   return new Promise((resolve, reject) => {
@@ -54,6 +70,19 @@ function getPosition(known) {
  */
 export default function HelpCenter(props) {
   const { user } = useAuth();
+
+  // Help voice commands from someone who isn't logged in
+  useEffect(() => {
+    if (user) return undefined;
+    const onCmd = (e) => {
+      if (e.detail.type === 'call-volunteer') {
+        say('Ca să chem un voluntar, trebuie să fii conectat în aplicație. Pentru urgențe spune: sună la 112.', { interrupt: true });
+      }
+    };
+    window.addEventListener(HELP_COMMAND_EVENT, onCmd);
+    return () => window.removeEventListener(HELP_COMMAND_EVENT, onCmd);
+  }, [user]);
+
   if (!user) return null;
   return user.accountType === 'VOLUNTEER' ? <VolunteerPanel {...props} /> : <ClientPanel {...props} />;
 }
@@ -74,11 +103,14 @@ function ClientPanel({ userLocation }) {
   const answeringRef = useRef(false);
   const closedByMeRef = useRef(false);
 
+  const attemptRef = useRef({ n: 0, timer: null });
+
   const answer = useCallback(async (yes) => {
     const r = prevRef.current;
     if (!r || answeringRef.current) return;
     answeringRef.current = true;
     helpConfirmBridge.clear();
+    clearTimeout(attemptRef.current.timer);
     setAsking(false);
     try {
       const res = await helpConfirm(r.id, yes);
@@ -101,25 +133,50 @@ function ClientPanel({ userLocation }) {
     }
   }, []);
 
-  // Volunteer pressed "deed finished": ask by voice, keep big Da / Nu buttons as backup
+  // Volunteer pressed "deed finished": ask by voice, then open the microphone (same listening
+  // popup as a double tap) for "Da" / "Nu". Big Da / Nu buttons stay on screen as a backup.
+
+  const stopAsking = useCallback(() => {
+    clearTimeout(attemptRef.current.timer);
+    attemptRef.current = { n: 0, timer: null };
+  }, []);
+
   const askConfirmation = useCallback((r) => {
+    const name = r.volunteerName || 'Voluntarul';
+    stopAsking();
     setAsking(true);
-    helpConfirmBridge.ask(answer); // a double tap + "da" / "nu" also answers
     vibrate([200, 100, 200]);
-    const question = `${r.volunteerName || 'Voluntarul'} spune că te-a ajutat. A fost rezolvat? Spune Da sau Nu.`;
-    say(question, {
-      interrupt: true,
-      onEnd: async () => {
-        if (!helpConfirmBridge.isAwaiting()) return; // already answered by tap / double tap
-        const heard = await listenOnce({ timeoutMs: 7000 });
-        if (!helpConfirmBridge.isAwaiting()) return;
-        const cmd = pickBestCommand(heard, { awaitingConfirmation: true });
-        if (cmd.type === 'confirm-yes') answer(true);
-        else if (cmd.type === 'confirm-no') answer(false);
-        else say('Nu am înțeles. Apasă Da sau Nu pe ecran, sau atinge de două ori și spune Da sau Nu.');
-      },
-    });
-  }, [answer]);
+
+    const ask = (text) => {
+      if (!helpConfirmBridge.isAwaiting()) return;
+      attemptRef.current.n += 1;
+      clearTimeout(attemptRef.current.timer);
+      say(text, {
+        interrupt: true,
+        onEnd: () => {
+          if (!helpConfirmBridge.isAwaiting()) return; // answered by tap meanwhile
+          requestVoiceListen('A fost rezolvat? Spune Da sau Nu');
+          // Nothing heard: ask again, then fall back to the buttons
+          attemptRef.current.timer = setTimeout(() => retry('Nu te-am auzit.'), CONFIRM_LISTEN_MS);
+        },
+      });
+    };
+    const retry = (why) => {
+      if (!helpConfirmBridge.isAwaiting()) return;
+      if (attemptRef.current.n >= CONFIRM_ATTEMPTS) {
+        clearTimeout(attemptRef.current.timer);
+        say(`${why} Când ești gata, apasă Da sau Nu pe ecran, sau atinge de două ori și spune Da sau Nu.`, { interrupt: true });
+        return;
+      }
+      ask(`${why} ${name} a terminat de ajutat? Spune Da sau Nu.`);
+    };
+
+    // "Da" / "Nu" heard by the main assistant -> answer(); anything else -> ask again
+    helpConfirmBridge.ask(answer, { onUnclear: () => retry('Nu am înțeles.') });
+    ask(`${name} spune că te-a ajutat. A fost rezolvat? Spune Da sau Nu.`);
+  }, [answer, stopAsking]);
+
+  useEffect(() => stopAsking, [stopAsking]);
 
   // React to status changes: speak what happened
   const applyUpdate = useCallback((next) => {
@@ -206,13 +263,31 @@ function ClientPanel({ userLocation }) {
     }
   }, []);
 
-  // Voice: "cheamă un voluntar", "anulează cererea"
+  // Voice: "am nevoie de ajutor", "anulează cererea", "unde e voluntarul"
   useEffect(() => {
     const onCmd = (e) => {
-      if (e.detail.type === 'call-volunteer') sendDistress();
-      if (e.detail.type === 'cancel-help') {
-        if (prevRef.current) cancel();
-        else say('Nu ai nicio cerere de ajutor activă.');
+      const r = prevRef.current;
+      switch (e.detail.type) {
+        case 'call-volunteer':
+          if (r) say(`Cererea ta e deja trimisă. ${describe(r)}`, { interrupt: true });
+          else sendDistress();
+          break;
+        case 'cancel-help':
+          if (r) cancel();
+          else say('Nu ai nicio cerere de ajutor activă.', { interrupt: true });
+          break;
+        case 'help-status':
+          say(r ? describe(r) : 'Nu ai nicio cerere de ajutor activă. Spune: am nevoie de ajutor.', { interrupt: true });
+          break;
+        case 'deed-finished':
+        case 'accept-help':
+        case 'release-help':
+        case 'duty-on':
+        case 'duty-off':
+        case 'my-points':
+          say('Comanda asta este pentru voluntari. Tu poți spune: am nevoie de ajutor.', { interrupt: true });
+          break;
+        default:
       }
     };
     window.addEventListener(HELP_COMMAND_EVENT, onCmd);
@@ -300,14 +375,14 @@ function ClientPanel({ userLocation }) {
 // Volunteer: on duty toggle, incoming requests, route to the client, Deed points
 // ════════════════════════════════════════════════════════════════════════════
 
-const ON_DUTY_KEY = 'accessmap_volunteer_on_duty';
 
 function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
   const isMobile = useIsMobile();
   const { user, refreshUser } = useAuth();
-  const [onDuty, setOnDuty] = useState(() => {
-    try { return localStorage.getItem(ON_DUTY_KEY) === '1'; } catch { return false; }
-  });
+  // Volunteers are on duty as soon as the app is open; "Ies din serviciu" only lasts until
+  // the app is opened again
+  const [onDuty, setOnDuty] = useState(true);
+  const dutyAnnouncedRef = useRef(false);
   const [data, setData] = useState(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState('');
@@ -351,7 +426,7 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
       playAlarmBeep();
       vibrate([400, 150, 400, 150, 400]);
       setOpen(true);
-      const msg = `Cerere de ajutor de la ${r.clientFirstName}, la ${spokenMeters(r.distanceMeters)}.${r.note ? ` Mesaj: ${r.note}.` : ''}`;
+      const msg = `Cerere de ajutor de la ${r.clientFirstName}, la ${spokenMeters(r.distanceMeters)}.${r.note ? ` Mesaj: ${r.note}.` : ''} Spune Accept sau apasă Ajut.`;
       say(msg, { interrupt: true });
       if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
         navigator.serviceWorker?.getRegistration().then((reg) => {
@@ -412,19 +487,36 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
     return () => clearInterval(t);
   }, [onDuty, hasLocation, Boolean(job), beat]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggleDuty = () => {
-    const next = !onDuty;
+  const setDuty = (next) => {
     setOnDuty(next);
-    try { localStorage.setItem(ON_DUTY_KEY, next ? '1' : '0'); } catch { /* ignore */ }
     if (next) {
       setOpen(true);
       // Asked from the tap, as browsers require; used for alerts while the app is in the background
       if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
       say(hasLocation ? 'Ești în serviciu. Te anunț când cineva din apropiere are nevoie de ajutor.' : 'Ești în serviciu. Aștept semnalul GPS.', { interrupt: true });
     } else {
-      say('Ai ieșit din serviciu.', { interrupt: true });
+      say('Ai ieșit din serviciu. Nu mai primești cereri până redeschizi aplicația sau spui: intru în serviciu.', { interrupt: true });
     }
   };
+  const toggleDuty = () => setDuty(!onDuty);
+
+  // Tell the volunteer once per app start that they're receiving requests
+  useEffect(() => {
+    if (!hasLocation || !onDuty || dutyAnnouncedRef.current) return;
+    dutyAnnouncedRef.current = true;
+    say('Ești voluntar în serviciu. Te anunț când cineva din apropiere are nevoie de ajutor.');
+  }, [hasLocation, onDuty]);
+
+  // Background alerts need notification permission, which browsers only grant from a tap
+  useEffect(() => {
+    if (!('Notification' in window) || Notification.permission !== 'default') return undefined;
+    const ask = () => {
+      Notification.requestPermission().catch(() => {});
+      window.removeEventListener('pointerup', ask, true);
+    };
+    window.addEventListener('pointerup', ask, true);
+    return () => window.removeEventListener('pointerup', ask, true);
+  }, []);
 
   const accept = async (r) => {
     setBusy(`accept-${r.id}`);
@@ -450,7 +542,7 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
       const j = await helpFinish(job.id);
       jobRef.current = j;
       setData((d) => ({ ...d, activeJob: j }));
-      say(`Am întrebat-o pe ${j.clientName} dacă a fost rezolvat. Primești punctele după confirmare.`, { interrupt: true });
+      say(`L-am întrebat pe ${j.clientName} dacă a fost rezolvat. Primești punctele după confirmare.`, { interrupt: true });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -474,12 +566,48 @@ function VolunteerPanel({ userLocation, onNavigateTo, onClearRoute }) {
     }
   };
 
-  // Voice: "fapta e gata"
+  // Voice: "accept", "fapta e gata", "nu mai pot ajunge", "intru / ies din serviciu", "câte puncte am"
   useEffect(() => {
     const onCmd = (e) => {
-      if (e.detail.type !== 'deed-finished') return;
-      if (jobRef.current?.status === 'ACCEPTED') finish();
-      else say('Nu ai nicio faptă în desfășurare.');
+      const current = jobRef.current;
+      switch (e.detail.type) {
+        case 'accept-help': {
+          if (current) { say(`Ai deja o faptă în desfășurare, la ${current.clientName}.`, { interrupt: true }); break; }
+          const first = (data?.nearby || [])[0];
+          if (first) accept(first);
+          else say(onDuty ? 'Nu e nicio cerere de ajutor aproape acum.' : 'Nu ești în serviciu. Spune: intru în serviciu.', { interrupt: true });
+          break;
+        }
+        case 'deed-finished':
+          if (current?.status === 'ACCEPTED') finish();
+          else if (current) say('Așteptăm confirmarea persoanei.', { interrupt: true });
+          else say('Nu ai nicio faptă în desfășurare.', { interrupt: true });
+          break;
+        case 'release-help':
+          if (current?.status === 'ACCEPTED') release();
+          else say('Nu ai nicio cerere preluată.', { interrupt: true });
+          break;
+        case 'duty-on':
+          if (onDuty) say('Ești deja în serviciu.', { interrupt: true });
+          else setDuty(true);
+          break;
+        case 'duty-off':
+          if (current) say('Ai o faptă în desfășurare. Termin-o întâi sau spune: nu mai pot ajunge.', { interrupt: true });
+          else if (onDuty) setDuty(false);
+          else say('Nu ești în serviciu.', { interrupt: true });
+          break;
+        case 'my-points':
+          say(`Ai ${points} de puncte de faptă bună, nivelul ${level || 'Începător'}, ${data?.deedsCompleted ?? user.deedsCompleted ?? 0} fapte confirmate.`, { interrupt: true });
+          break;
+        case 'help-status':
+          if (current) say(current.status === 'ACCEPTED' ? `Mergi la ${current.clientName}${current.distanceMeters != null ? `, la ${spokenMeters(current.distanceMeters)}` : ''}.` : `Așteptăm confirmarea lui ${current.clientName}.`, { interrupt: true });
+          else say(`${(data?.nearby || []).length ? `Sunt ${data.nearby.length} cereri aproape.` : 'Nicio cerere aproape.'}`, { interrupt: true });
+          break;
+        case 'call-volunteer':
+          say('Contul tău este de voluntar. Pentru urgențe spune: sună la 112.', { interrupt: true });
+          break;
+        default:
+      }
     };
     window.addEventListener(HELP_COMMAND_EVENT, onCmd);
     return () => window.removeEventListener(HELP_COMMAND_EVENT, onCmd);
