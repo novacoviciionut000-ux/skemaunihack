@@ -78,7 +78,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/geocode/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/crossings").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/reports").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/reports", "/api/reports/*/upvote").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/reports", "/api/reports/*/upvote", "/api/reports/*/not-there").permitAll()
                         // 3. Resurse ce necesită autentificare
                         .requestMatchers("/api/auth/me", "/api/auth/profile", "/api/auth/test-email").authenticated()
                         // 3b. Distress signals, volunteers and Deed points (HelpController)

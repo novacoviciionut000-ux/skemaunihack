@@ -203,6 +203,7 @@ class AuthServiceTest {
     @DisplayName("Verificarea rapidă a disponibilității username-ului (isUsernameTaken)")
     void testIsUsernameTaken() {
         when(userRepository.existsByUsernameIgnoreCase("utilizator_existent")).thenReturn(true);
+        when(userRepository.existsByUsernameIgnoreCase("UTILIZATOR_EXISTENT")).thenReturn(true);
         when(userRepository.existsByUsernameIgnoreCase("utilizator_liber")).thenReturn(false);
 
         assertTrue(authService.isUsernameTaken("utilizator_existent"));

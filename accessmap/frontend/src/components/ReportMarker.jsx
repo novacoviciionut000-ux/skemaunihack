@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
-import { upvoteReport } from '../api/client';
+import { upvoteReport, reportNotThere } from '../api/client';
 
 // SVG icons for each obstacle category
 const OBSTACLE_CONFIGS = {
@@ -96,6 +96,9 @@ function getCustomObstacleIcon(type) {
 export default function ReportMarker({ report }) {
   const [upvotes, setUpvotes] = useState(report.upvotes || 1);
   const [voted, setVoted] = useState(false);
+  // 'idle' | 'sending' | 'sent' | 'failed' for the "not there anymore" vote
+  const [notThereState, setNotThereState] = useState('idle');
+  const [gone, setGone] = useState(false);
 
   const normType = (report.type || 'OTHER').toUpperCase();
   const cfg = OBSTACLE_CONFIGS[normType] || OBSTACLE_CONFIGS.OTHER;
@@ -103,11 +106,31 @@ export default function ReportMarker({ report }) {
 
   const handleUpvote = async (e) => {
     e.stopPropagation();
-    if (voted) return;
+    if (voted || notThereState === 'sent') return;
     setUpvotes((u) => u + 1);
     setVoted(true);
     await upvoteReport(report.id);
   };
+
+  // "The obstacle is not there anymore". The server hides the report once enough people
+  // agree; until then the marker stays and only this user's vote is recorded.
+  const handleNotThere = async (e) => {
+    e.stopPropagation();
+    if (voted || notThereState === 'sending' || notThereState === 'sent') return;
+    setNotThereState('sending');
+    const result = await reportNotThere(report.id);
+    if (!result) {
+      setNotThereState('failed');
+      return;
+    }
+    if (result.removed) {
+      setGone(true);
+      return;
+    }
+    setNotThereState('sent');
+  };
+
+  if (gone) return null;
 
   return (
     <Marker position={[report.lat, report.lng]} icon={icon}>
@@ -161,7 +184,7 @@ export default function ReportMarker({ report }) {
             </span>
             <button
               onClick={handleUpvote}
-              disabled={voted}
+              disabled={voted || notThereState === 'sent'}
               style={{
                 background: voted ? '#F0FDF4' : '#FEF2F2',
                 color: voted ? '#15803D' : '#B91C1C',
@@ -179,6 +202,38 @@ export default function ReportMarker({ report }) {
             >
               {voted ? 'Confirmat' : 'Confirmă'}
             </button>
+          </div>
+
+          {/* The obstacle was removed or fixed: report that it is not there anymore */}
+          <div style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={handleNotThere}
+              disabled={voted || notThereState === 'sending' || notThereState === 'sent'}
+              style={{
+                width: '100%',
+                background: notThereState === 'sent' ? '#dcfce7' : '#f1f5f9',
+                color: notThereState === 'sent' ? '#15803d' : '#334155',
+                border: '1px solid #cbd5e1',
+                padding: '7px 12px',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: voted || notThereState === 'sending' || notThereState === 'sent' ? 'default' : 'pointer',
+                opacity: voted ? 0.5 : 1,
+              }}
+            >
+              {notThereState === 'sent'
+                ? 'Mulțumim, am notat că nu mai e acolo'
+                : notThereState === 'sending'
+                  ? 'Se trimite...'
+                  : 'Obstacolul nu mai e acolo'}
+            </button>
+            {notThereState === 'failed' && (
+              <div role="alert" style={{ fontSize: 11, color: '#b91c1c', marginTop: 4 }}>
+                Nu am putut trimite. Încearcă din nou.
+              </div>
+            )}
           </div>
         </div>
       </Popup>

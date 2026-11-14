@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS reports (
     type VARCHAR(50) NOT NULL,
     description TEXT,
     upvotes INT NOT NULL DEFAULT 1,
+    not_there_votes INT NOT NULL DEFAULT 0,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     author_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
     author_name VARCHAR(100),

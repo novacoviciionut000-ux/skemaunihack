@@ -18,6 +18,11 @@ public class Report {
     private String description;
     
     private int upvotes = 1;
+
+    /** Votes from users who passed by and saw that the obstacle is gone. */
+    @Column(name = "not_there_votes", nullable = false, columnDefinition = "integer default 0 not null")
+    private int notThereVotes = 0;
+
     private boolean active = true;
 
     @Column(name = "author_id")
@@ -34,6 +39,8 @@ public class Report {
     public ReportType getType() { return type; }
     public String getDescription() { return description; }
     public int getUpvotes() { return upvotes; }
+    public int getNotThereVotes() { return notThereVotes; }
+    public void setNotThereVotes(int notThereVotes) { this.notThereVotes = notThereVotes; }
     public boolean isActive() { return active; }
     public Long getAuthorId() { return authorId; }
     public String getAuthorName() { return authorName; }

@@ -378,6 +378,12 @@ export default function Map({
       <MapContainer
         center={[45.7489, 21.2087]}
         zoom={14}
+        // Without these, zooming far out repeats the world sideways and shows grey bands
+        // past the poles. Zoom 3 is the smallest level that still fills a typical screen.
+        minZoom={3}
+        maxBounds={[[-85.06, -180], [85.06, 180]]}
+        maxBoundsViscosity={1.0}
+        worldCopyJump={false}
         style={{ height: '100%', width: '100%' }}
         zoomControl={false}
       >
@@ -389,6 +395,8 @@ export default function Map({
           attribution={currentTileConfig.attribution}
           url={currentTileConfig.url}
           maxZoom={currentTileConfig.maxZoom}
+          noWrap
+          bounds={[[-85.06, -180], [85.06, 180]]}
         />
 
         <MapController centerTarget={centerTarget} followUser={followUser} userLocation={userLocation} />
