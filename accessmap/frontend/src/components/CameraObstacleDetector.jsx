@@ -28,6 +28,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { getManeuverIcon } from './NavigationGuidance';
+import { speechQueue } from '../utils/speechQueue';
 import {
   loadObstacleModel,
   captureFrameSample,
@@ -93,7 +94,7 @@ export default function CameraObstacleDetector({
   nearbyDetour,
   onDetourSaved,
   // Navigation & Full-Screen props
-  isFullScreen = false,
+  isFullScreen = true,
   onToggleFullScreen,
   isNavigating = false,
   guidance = null,
@@ -120,6 +121,12 @@ export default function CameraObstacleDetector({
   const audioCtxRef = useRef(null);
   const lastSidewalkEventRef = useRef({ status: '', time: 0 });
   const hadActiveAlertRef = useRef(false);
+  const isStartingRef = useRef(false);
+  const prevOpenRef = useRef(false);
+
+  useEffect(() => {
+    speechQueue.setVoiceEnabled(voiceEnabled);
+  }, [voiceEnabled]);
 
   // Detour recording refs
   const recordingRef = useRef(null); // { obstacleCoords, obstacleClass, labelRo, path: [[lat, lng], ...] }
@@ -140,6 +147,7 @@ export default function CameraObstacleDetector({
   const [tiltMessage, setTiltMessage] = useState('');
   const [isRecordingDetour, setIsRecordingDetour] = useState(false);
   const [detourToast, setDetourToast] = useState('');
+  const [isSimulatedMode, setIsSimulatedMode] = useState(false);
 
   const stopCamera = useCallback(() => {
     if (rafRef.current) {
@@ -153,12 +161,17 @@ export default function CameraObstacleDetector({
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    }
     prevObstaclesRef.current = [];
     prevSidewalkRef.current = null;
     clearFramesRef.current = 0;
     tiltSmoothedRef.current = { beta: null, gamma: null, activeReason: null };
     lastTiltSpokenRef.current = { reason: null, time: 0 };
     setCameraActive(false);
+    setIsSimulatedMode(false);
     setDetectedObstacles([]);
     setActiveAlert(null);
     setSidewalkStatus(null);
@@ -234,37 +247,19 @@ export default function CameraObstacleDetector({
           });
         }
 
-        // Avertizare vocală audio (TTS) în limba română pentru poziția telefonului
+        // Avertizare vocală audio (TTS) secvențială prin coada unificată
         const isNewTiltReason = lastTiltSpokenRef.current.reason !== reason;
         const isTiltVoiceCooldownElapsed = now - lastTiltSpokenRef.current.time >= 4000;
         if ((isNewTiltReason || isTiltVoiceCooldownElapsed) && voiceEnabled !== false) {
           lastTiltSpokenRef.current = { reason, time: now };
-          if ('speechSynthesis' in window) {
-            try {
-              window.speechSynthesis.cancel();
-              const utt = new SpeechSynthesisUtterance(msg);
-              utt.lang = 'ro-RO';
-              utt.rate = 1.05;
-              window.speechSynthesis.speak(utt);
-            } catch (err) {
-              console.warn('Tilt warning speech synthesis error:', err);
-            }
-          }
+          speechQueue.speak(msg, { priority: 'normal' });
         }
       } else {
         setTiltMessage('');
         // Dacă telefonul a fost înclinat și utilizatorul l-a readus în poziție corectă, oferim confirmare audio
         if (lastTiltSpokenRef.current.reason) {
           lastTiltSpokenRef.current = { reason: null, time: now };
-          if ('speechSynthesis' in window && voiceEnabled !== false) {
-            try {
-              window.speechSynthesis.cancel();
-              const utt = new SpeechSynthesisUtterance('Poziție corectă a telefonului.');
-              utt.lang = 'ro-RO';
-              utt.rate = 1.1;
-              window.speechSynthesis.speak(utt);
-            } catch {}
-          }
+          speechQueue.speak('Poziție corectă a telefonului.', { priority: 'normal' });
         }
       }
     };
@@ -553,14 +548,8 @@ export default function CameraObstacleDetector({
             emitSidewalkStatusEvent({ ...sidewalk, timestamp: now });
 
             // Audible warning and safe direction correction for visually impaired user
-            if ('speechSynthesis' in window) {
-              try {
-                window.speechSynthesis.cancel();
-                const utt = new SpeechSynthesisUtterance(sidewalk.correctionRo);
-                utt.lang = 'ro-RO';
-                utt.rate = 1.05;
-                window.speechSynthesis.speak(utt);
-              } catch {}
+            if (voiceEnabled !== false) {
+              speechQueue.speak(sidewalk.correctionRo, { priority: 'urgent' });
             }
             if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
               navigator.vibrate([220, 90, 220]);
@@ -614,15 +603,9 @@ export default function CameraObstacleDetector({
               emitObstacleAlertEvent(payload);
               if (onObstacleAlert) onObstacleAlert(payload);
 
-              // Avertizare vocală audio pentru obstacole și semafoare dacă nu se rostește deja avertizarea de trotuar
-              if (!needsSidewalkWarning && 'speechSynthesis' in window && voiceEnabled !== false) {
-                try {
-                  window.speechSynthesis.cancel();
-                  const utt = new SpeechSynthesisUtterance(primaryThreat.messageRo);
-                  utt.lang = 'ro-RO';
-                  utt.rate = 1.05;
-                  window.speechSynthesis.speak(utt);
-                } catch {}
+              // Avertizare vocală audio secvențială pentru obstacole și semafoare
+              if (!needsSidewalkWarning && voiceEnabled !== false) {
+                speechQueue.speak(primaryThreat.messageRo, { priority: 'high' });
               }
             }
           } else {
@@ -648,6 +631,8 @@ export default function CameraObstacleDetector({
 
   const startCamera = useCallback(
     async (requestedFacingMode = facingMode) => {
+      if (isStartingRef.current) return;
+      isStartingRef.current = true;
       setError(null);
 
       // Unlock Web Audio on user gesture (used for iPhone tilt feedback since iOS lacks navigator.vibrate)
@@ -679,10 +664,19 @@ export default function CameraObstacleDetector({
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setError('Browserul nu suportă accesul la cameră (necesită HTTPS sau localhost).');
+        isStartingRef.current = false;
         return;
       }
 
-      stopCamera();
+      // Stop previous tracks gently before requesting a new stream
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
 
       try {
         if (!modelRef.current) {
@@ -704,38 +698,74 @@ export default function CameraObstacleDetector({
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+          try {
+            await videoRef.current.play();
+          } catch (playErr) {
+            if (playErr.name !== 'AbortError') {
+              console.warn('Video play non-fatal warning:', playErr);
+            }
+          }
         }
         setCameraActive(true);
         startDetectionLoop();
       } catch (err) {
         setModelLoading(false);
-        console.error('Camera start error:', err);
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          setError('Permisiunea pentru cameră a fost refuzată. Activează accesul la cameră din setările browserului.');
-        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-          setError('Nu a fost detectată nicio cameră pe acest dispozitiv.');
-        } else {
-          setError(`Nu s-a putut porni camera: ${err.message || 'eroare necunoscută'}`);
+        setCameraActive(false);
+        if (canvasRef.current) {
+          const ctx = canvasRef.current.getContext('2d');
+          if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
         }
+        console.error('Camera start error:', err);
+        const errMsg = err.message || '';
+        if (
+          err.name === 'NotAllowedError' ||
+          err.name === 'PermissionDeniedError' ||
+          err.name === 'SecurityError' ||
+          errMsg.toLowerCase().includes('not allowed') ||
+          errMsg.toLowerCase().includes('denied')
+        ) {
+          setError('Permisiunea pentru cameră nu a putut fi accesată sau a fost refuzată de browser. Poți reîncerca permisiunea sau poți continua în modul Asistent Virtual.');
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError' || errMsg.toLowerCase().includes('not found')) {
+          setError('Nu a fost detectată nicio cameră video pe acest dispozitiv.');
+        } else if (err.name !== 'AbortError') {
+          setError(`Nu s-a putut porni camera: ${errMsg || 'eroare necunoscută'}`);
+        }
+      } finally {
+        isStartingRef.current = false;
       }
     },
-    [facingMode, startDetectionLoop, stopCamera]
+    [facingMode, startDetectionLoop]
   );
 
-  // Auto-start camera when isOpen is set to true
-  useEffect(() => {
-    if (isOpen && !cameraActive && !modelLoading && !error) {
-      startCamera();
+  const startSimulatedAssistant = useCallback(() => {
+    setError(null);
+    setIsSimulatedMode(true);
+    setCameraActive(true);
+    const sidewalk = {
+      action: 'straight',
+      messageRo: 'Cale liberă înainte — Mod Asistent Virtual activ',
+      confidence: 0.95,
+      leftEdge: false,
+      rightEdge: false,
+    };
+    setSidewalkStatus(sidewalk);
+    setTimeout(() => {
+      drawOverlay([], sidewalk, 640, 480);
+    }, 80);
+    if (voiceEnabled !== false) {
+      speechQueue.speak('Mod Asistență Virtuală activat. Ghidarea audio pe traseu continuă.', { priority: 'normal' });
     }
-  }, [isOpen, cameraActive, modelLoading, error, startCamera]);
+  }, [drawOverlay, voiceEnabled]);
 
+  // Auto-start camera cleanly once whenever isOpen transitions to true
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen && !prevOpenRef.current) {
+      startCamera();
+    } else if (!isOpen && prevOpenRef.current) {
       stopCamera();
     }
-    return () => stopCamera();
-  }, [isOpen, stopCamera]);
+    prevOpenRef.current = isOpen;
+  }, [isOpen, startCamera, stopCamera]);
 
   const handleSwitchCamera = () => {
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
@@ -937,6 +967,7 @@ export default function CameraObstacleDetector({
           aspectRatio: isFullScreen ? 'unset' : '4 / 3',
           background: '#020617',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden',
@@ -947,10 +978,12 @@ export default function CameraObstacleDetector({
           playsInline
           muted
           style={{
+            position: 'absolute',
+            inset: 0,
             width: '100%',
             height: '100%',
             objectFit: 'cover',
-            display: cameraActive ? 'block' : 'none',
+            display: cameraActive && !isSimulatedMode ? 'block' : 'none',
           }}
         />
         <canvas
@@ -1006,27 +1039,84 @@ export default function CameraObstacleDetector({
         )}
 
         {error && (
-          <div style={{ textAlign: 'center', padding: 18 }}>
-            <AlertTriangle size={30} color="#f87171" style={{ marginBottom: 8 }} />
-            <p style={{ margin: '0 0 12px', fontSize: 12.5, color: '#fca5a5', lineHeight: 1.4 }}>
-              {error}
-            </p>
-            <button
-              type="button"
-              onClick={() => startCamera()}
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '24px 20px',
+              maxWidth: 380,
+              width: 'calc(100% - 32px)',
+              background: 'rgba(15, 23, 42, 0.95)',
+              borderRadius: 16,
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              boxShadow: '0 12px 36px rgba(0, 0, 0, 0.6)',
+              zIndex: 10,
+              boxSizing: 'border-box',
+            }}
+          >
+            <div
               style={{
-                padding: '8px 16px',
-                background: '#334155',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: 10,
-                fontSize: 12.5,
-                fontWeight: 600,
-                cursor: 'pointer',
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                background: 'rgba(239, 68, 68, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 10px',
               }}
             >
-              Încearcă din nou
-            </button>
+              <AlertTriangle size={22} color="#f87171" />
+            </div>
+            <div style={{ fontSize: 14.5, fontWeight: 700, color: '#f8fafc', marginBottom: 6 }}>
+              Acces Cameră Indisponibil
+            </div>
+            <p style={{ margin: '0 0 16px', fontSize: 12.5, color: '#cbd5e1', lineHeight: 1.45 }}>
+              {error}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => startCamera()}
+                style={{
+                  padding: '10px 16px',
+                  background: '#2563eb',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 10,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                }}
+              >
+                <RefreshCw size={15} />
+                Reîncearcă accesul la cameră
+              </button>
+              <button
+                type="button"
+                onClick={startSimulatedAssistant}
+                style={{
+                  padding: '9px 16px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  color: '#93c5fd',
+                  border: '1px solid rgba(147, 197, 253, 0.25)',
+                  borderRadius: 10,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                }}
+              >
+                <Eye size={14} />
+                Continuă în mod Asistent Virtual
+              </button>
+            </div>
           </div>
         )}
 

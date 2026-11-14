@@ -23,6 +23,7 @@ import {
   getLiveGuidanceStatus,
   getBearing,
 } from './utils/navigationEngine';
+import { speechQueue } from './utils/speechQueue';
 
 export default function App() {
   const { user } = useAuth();
@@ -73,6 +74,11 @@ export default function App() {
   const [voiceGuidanceEnabled, setVoiceGuidanceEnabled] = useState(true);
   const [isSimulating, setIsSimulating] = useState(false);
   const simIndexRef = useRef(0);
+
+  // Sincronizează starea vocii cu managerul de coadă audio
+  useEffect(() => {
+    speechQueue.setVoiceEnabled(voiceGuidanceEnabled);
+  }, [voiceGuidanceEnabled]);
 
   // Load obstacle reports on mount
   useEffect(() => {
@@ -154,26 +160,19 @@ export default function App() {
         return prev;
       });
 
-      // Anunț vocal în limba română la activarea automată a camerei pe traseu
-      if ('speechSynthesis' in window && voiceGuidanceEnabled) {
+      // Anunț vocal în limba română la activarea automată a camerei pe traseu (prin coada unificată)
+      if (voiceGuidanceEnabled) {
         const dist = routeData.distanceMeters ? `${Math.round(routeData.distanceMeters)} metri` : '';
         const mins = routeData.timeSeconds ? Math.max(1, Math.round(routeData.timeSeconds / 60)) : '';
         const firstManeuver = steps[0]?.instructionRo || 'Porniți drept înainte pe traseu';
         const msg = `Traseu pregătit, distanță ${dist}, aproximativ ${mins} minute. Am deschis camera pe tot ecranul pentru asistență și ghidare. ${firstManeuver}.`;
-        try {
-          window.speechSynthesis.cancel();
-          const utt = new SpeechSynthesisUtterance(msg);
-          utt.lang = 'ro-RO';
-          utt.rate = 1.05;
-          window.speechSynthesis.speak(utt);
-        } catch {}
+        speechQueue.speak(msg, { priority: 'high' });
       }
     } else {
       setNavSteps([]);
       setLiveGuidance(null);
       setIsNavigating(false);
       setIsSimulating(false);
-      setCameraFullScreen(false);
     }
   }, [routeData]);
 
@@ -378,12 +377,7 @@ export default function App() {
     setIsSimulating(false);
     setLiveGuidance(null);
     simIndexRef.current = 0;
-    setCameraFullScreen(false);
-    if ('speechSynthesis' in window) {
-      try {
-        window.speechSynthesis.cancel();
-      } catch {}
-    }
+    speechQueue.cancel();
   }, []);
 
   const handleToggleSimulation = useCallback(() => {
@@ -572,7 +566,10 @@ export default function App() {
           <VoiceButton
             onDestinationSet={handleVoiceDestination}
             onEmergency={() => setEmergencyActive(true)}
-            onCameraOpen={() => setCameraOpen(true)}
+            onCameraOpen={() => {
+              setCameraOpen(true);
+              setCameraFullScreen(true);
+            }}
             onCameraClose={() => setCameraOpen(false)}
             onStartNavigation={handleStartNavigation}
           />
@@ -620,7 +617,13 @@ export default function App() {
           setCenterTarget({ lat: coords.lat, lng: coords.lng, zoom: 16 });
         }}
         cameraOpen={cameraOpen}
-        onToggleCamera={() => setCameraOpen((prev) => !prev)}
+        onToggleCamera={() => {
+          setCameraOpen((prev) => {
+            const next = !prev;
+            if (next) setCameraFullScreen(true);
+            return next;
+          });
+        }}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={setSidebarCollapsed}
       />

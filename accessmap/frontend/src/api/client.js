@@ -233,7 +233,8 @@ const toObstacle = (r) => ({
 });
 
 /** Haversine distance in meters */
-const getDistance = (c1, c2) => {
+export const getDistance = (c1, c2) => {
+    if (!c1 || !c2 || c1.lat == null || c2.lat == null) return 0;
     const R = 6371e3;
     const p1 = (c1.lat * Math.PI) / 180;
     const p2 = (c2.lat * Math.PI) / 180;
@@ -243,61 +244,186 @@ const getDistance = (c1, c2) => {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
+export const formatDistance = (meters) => {
+    if (meters == null || isNaN(meters)) return '';
+    if (meters < 1000) return `${Math.round(meters)} m`;
+    return `${(meters / 1000).toFixed(1)} km`;
+};
+
+export const normalizeSearchText = (str) =>
+    (str || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
 const TIMISOARA_LANDMARKS = [
-    { displayName: 'Piața Victoriei, Timișoara', lat: 45.7538, lng: 21.2257 },
-    { displayName: 'Piața Unirii, Timișoara', lat: 45.7579, lng: 21.2289 },
-    { displayName: 'Piața Libertății, Timișoara', lat: 45.7557, lng: 21.2272 },
-    { displayName: 'Iulius Town / Mall, Timișoara', lat: 45.7663, lng: 21.2291 },
-    { displayName: 'Gara de Nord, Timișoara', lat: 45.7505, lng: 21.2084 },
-    { displayName: 'Universitatea Politehnica Timișoara (UPT)', lat: 45.7489, lng: 21.2280 },
-    { displayName: 'Spitalul Clinic Județean de Urgență, Timișoara', lat: 45.7408, lng: 21.2415 },
-    { displayName: 'Parcul Rozelor, Timișoara', lat: 45.7508, lng: 21.2312 },
-    { displayName: 'Catedrala Mitropolitană, Timișoara', lat: 45.7513, lng: 21.2245 },
+    { displayName: 'Piața Victoriei (Centru / Operă), Timișoara', lat: 45.7538, lng: 21.2257, keywords: ['centru', 'opera', 'victoriei', 'piata victoriei', 'teatru'] },
+    { displayName: 'Catedrala Mitropolitană, Timișoara', lat: 45.7513, lng: 21.2245, keywords: ['catedrala', 'mitropolie', 'biserica', 'centru'] },
+    { displayName: 'Piața Unirii (Centrul Vechi), Timișoara', lat: 45.7579, lng: 21.2289, keywords: ['unirii', 'piata unirii', 'dom', 'baroc', 'centru vechi'] },
+    { displayName: 'Piața Libertății, Timișoara', lat: 45.7557, lng: 21.2272, keywords: ['libertatii', 'piata libertatii', 'primarie'] },
+    { displayName: 'Iulius Town / Iulius Mall, Timișoara', lat: 45.7663, lng: 21.2291, keywords: ['iulius', 'mall', 'shopping', 'openville', 'aradului'] },
+    { displayName: 'Shopping City Timișoara (Calea Șagului)', lat: 45.7228, lng: 21.2062, keywords: ['shopping city', 'mall sagului', 'sagului', 'carrefour'] },
+    { displayName: 'Gara de Nord, Timișoara', lat: 45.7505, lng: 21.2084, keywords: ['gara', 'gara de nord', 'tren', 'cfr'] },
+    { displayName: 'Universitatea Politehnica Timișoara (UPT)', lat: 45.7489, lng: 21.2280, keywords: ['upt', 'politehnica', 'electro', 'rectorat', 'facultate'] },
+    { displayName: 'Universitatea de Vest din Timișoara (UVT)', lat: 45.7471, lng: 21.2315, keywords: ['uvt', 'universitatea de vest', 'parvan', 'studentesc'] },
+    { displayName: 'Complexul Studențesc, Timișoara', lat: 45.7460, lng: 21.2380, keywords: ['complex', 'complex studentesc', 'camine', 'studenti'] },
+    { displayName: 'Spitalul Clinic Județean de Urgență, Timișoara', lat: 45.7408, lng: 21.2415, keywords: ['spital', 'judetean', 'urgenta', 'sanatate', 'medicina'] },
+    { displayName: 'Spitalul Municipal (Clinicile Noi), Timișoara', lat: 45.7585, lng: 21.2230, keywords: ['spital', 'municipal', 'clinicile noi', 'botanic'] },
+    { displayName: 'Spitalul de Copii Louis Țurcanu, Timișoara', lat: 45.7530, lng: 21.2210, keywords: ['spital', 'copii', 'louis turcanu', 'pediatrie'] },
+    { displayName: 'Parcul Rozelor, Timișoara', lat: 45.7508, lng: 21.2312, keywords: ['parc', 'rozelor', 'trandafiri', 'bega'] },
+    { displayName: 'Parcul Central Anton Scudier, Timișoara', lat: 45.7510, lng: 21.2215, keywords: ['parcul central', 'scudier', 'parc'] },
+    { displayName: 'Parcul Botanic, Timișoara', lat: 45.7600, lng: 21.2250, keywords: ['parcul botanic', 'botanic', 'parc'] },
+    { displayName: 'Faleza Râului Bega (Podul Michelangelo)', lat: 45.7495, lng: 21.2340, keywords: ['bega', 'faleza', 'michelangelo', 'pod'] },
+    { displayName: 'Piața Bălcescu, Timișoara', lat: 45.7400, lng: 21.2260, keywords: ['balcescu', 'piata balcescu', 'elisabetin'] },
+    { displayName: 'Piața Traian, Timișoara', lat: 45.7570, lng: 21.2505, keywords: ['traian', 'piata traian', 'fabric'] },
+    { displayName: 'Piața Maria (Sfânta Maria), Timișoara', lat: 45.7475, lng: 21.2185, keywords: ['maria', 'piata maria', 'sfanta maria', 'tramvai'] },
+    { displayName: 'Piața 700, Timișoara', lat: 45.7565, lng: 21.2235, keywords: ['piata 700', '700', 'spital', 'clinici'] },
+    { displayName: 'Calea Torontalului, Timișoara', lat: 45.7730, lng: 21.2150, keywords: ['torontalului', 'calea torontalului', 'nord'] },
+    { displayName: 'Calea Aradului, Timișoara', lat: 45.7750, lng: 21.2280, keywords: ['aradului', 'calea aradului', 'agronomie'] },
+    { displayName: 'Calea Șagului, Timișoara', lat: 45.7320, lng: 21.2100, keywords: ['sagului', 'calea sagului', 'dambovita'] },
+    { displayName: 'Calea Girocului (Calea Martirilor), Timișoara', lat: 45.7360, lng: 21.2400, keywords: ['girocului', 'martirilor', 'calea martirilor'] },
+    { displayName: 'Bulevardul Take Ionescu, Timișoara', lat: 45.7600, lng: 21.2400, keywords: ['take ionescu', 'bulevard', 'politie'] },
+    { displayName: 'Bulevardul Republicii, Timișoara', lat: 45.7515, lng: 21.2150, keywords: ['republicii', 'bulevardul republicii'] },
+    { displayName: 'Aeroportul Internațional Traian Vuia Timișoara', lat: 45.8100, lng: 21.3380, keywords: ['aeroport', 'traian vuia', 'avion', 'terminal'] },
 ];
 
-/** Search and autocomplete locations as user types */
-export const searchSuggestions = async (query) => {
-    if (!query || query.trim().length < 2) return [];
-    const trimmed = query.trim();
+/** Search and autocomplete locations as user types, with proximity-based sorting */
+export const searchSuggestions = async (query = '', userLocation = null) => {
+    const refCoords = userLocation && userLocation.lat != null
+        ? { lat: Number(userLocation.lat), lng: Number(userLocation.lng) }
+        : { lat: 45.7538, lng: 21.2257 }; // Fallback la Piața Victoriei (Centrul Timișoarei)
 
-    // 1. Try backend /api/geocode/suggest
-    try {
-        const r = await request(`/api/geocode/suggest?q=${encodeURIComponent(trimmed)}&limit=5`);
-        if (Array.isArray(r) && r.length > 0) {
-            return r
-                .filter((item) => item && item.coordinate)
-                .map((item) => ({
-                    lat: item.coordinate.lat,
-                    lng: item.coordinate.lng,
-                    displayName: item.displayName || item.query,
-                }));
-        }
-    } catch {
-        // Backend offline or error -> fall through to OSM Nominatim
-    }
+    const cleanQ = normalizeSearchText(query);
+    const queryTokens = cleanQ.length > 0 ? cleanQ.split(' ').filter(Boolean) : [];
 
-    // 2. Direct client-side OpenStreetMap Nominatim API
-    try {
-        const res = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(trimmed)}&limit=5&countrycodes=ro`
-        );
-        if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) {
-                return data.map((item) => ({
-                    lat: parseFloat(item.lat),
-                    lng: parseFloat(item.lon),
-                    displayName: item.display_name,
-                }));
+    // Helper to score landmark relevance
+    const getLandmarkRelevance = (item) => {
+        if (queryTokens.length === 0) return 1;
+        const normTitle = normalizeSearchText(item.displayName);
+        const normKeywords = (item.keywords || []).map(normalizeSearchText).join(' ');
+        const fullSearchTarget = `${normTitle} ${normKeywords}`;
+
+        if (normTitle.startsWith(cleanQ)) return 100;
+        if (fullSearchTarget.includes(cleanQ)) return 80;
+
+        // Check if all tokens match
+        const allTokensMatch = queryTokens.every((token) => fullSearchTarget.includes(token));
+        if (allTokensMatch) return 60;
+
+        // Check if any token matches
+        const someTokenMatch = queryTokens.some((token) => fullSearchTarget.includes(token));
+        if (someTokenMatch) return 30;
+
+        return 0;
+    };
+
+    // 1. Gather local matching landmarks
+    let candidates = [];
+    if (queryTokens.length === 0) {
+        // Când nu a tastat nimic (câmpul a primit focus), afișăm direct cele mai apropiate locații de interes
+        candidates = TIMISOARA_LANDMARKS.map((item) => ({
+            ...item,
+            relevance: 1,
+            distanceMeters: Math.round(getDistance(refCoords, item)),
+        }));
+    } else {
+        TIMISOARA_LANDMARKS.forEach((item) => {
+            const rel = getLandmarkRelevance(item);
+            if (rel > 0) {
+                candidates.push({
+                    displayName: item.displayName,
+                    lat: item.lat,
+                    lng: item.lng,
+                    relevance: rel,
+                    distanceMeters: Math.round(getDistance(refCoords, item)),
+                });
             }
-        }
-    } catch {
-        // Network unavailable -> fall through to local landmarks
+        });
     }
 
-    // 3. Fallback to local landmarks
-    const qLower = trimmed.toLowerCase();
-    return TIMISOARA_LANDMARKS.filter((l) => l.displayName.toLowerCase().includes(qLower));
+    // 2. If user typed >= 2 chars, also query Nominatim with Timișoara geographic bias
+    if (cleanQ.length >= 2) {
+        // Încercăm întâi backend-ul local dacă este pornit
+        try {
+            const r = await request(`/api/geocode/suggest?q=${encodeURIComponent(query.trim())}&limit=5`);
+            if (Array.isArray(r) && r.length > 0) {
+                r.filter((item) => item && item.coordinate).forEach((item) => {
+                    const lat = Number(item.coordinate.lat);
+                    const lng = Number(item.coordinate.lng);
+                    candidates.push({
+                        displayName: item.displayName || item.query,
+                        lat,
+                        lng,
+                        relevance: 70,
+                        distanceMeters: Math.round(getDistance(refCoords, { lat, lng })),
+                    });
+                });
+            }
+        } catch {
+            // Ignorăm eroarea backend-ului și mergem la Nominatim
+        }
+
+        // Direct client-side OpenStreetMap Nominatim API with Timișoara viewbox
+        try {
+            const viewbox = '21.12,45.68,21.36,45.84'; // Bounding box Timișoara metropolitan
+            const res = await fetch(
+                `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query.trim())}&viewbox=${viewbox}&bounded=0&limit=8&countrycodes=ro`
+            );
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data) && data.length > 0) {
+                    data.forEach((item) => {
+                        const lat = parseFloat(item.lat);
+                        const lng = parseFloat(item.lon);
+                        candidates.push({
+                            displayName: item.display_name,
+                            lat,
+                            lng,
+                            relevance: 50,
+                            distanceMeters: Math.round(getDistance(refCoords, { lat, lng })),
+                        });
+                    });
+                }
+            }
+        } catch {
+            // Rețea indisponibilă, candidații locali rămân suficienți
+        }
+    }
+
+    // 3. Deduplicate by approx lat/lng coordinates (within ~20 meters)
+    const unique = [];
+    candidates.forEach((cand) => {
+        const isDuplicate = unique.some(
+            (u) => Math.abs(u.lat - cand.lat) < 0.0003 && Math.abs(u.lng - cand.lng) < 0.0003
+        );
+        if (!isDuplicate) {
+            unique.push(cand);
+        }
+    });
+
+    // 4. SORT BY PROXIMITY FIRST (closer locations show up FIRST)
+    // For close relevance scores, closest distance wins
+    unique.sort((a, b) => {
+        // Dacă ambele au relevanță similară sau utilizatorul tastează un prefix parțial,
+        // sortăm crescător după distanță (cele mai apropiate apar primele)
+        const relDiff = (b.relevance || 0) - (a.relevance || 0);
+        if (Math.abs(relDiff) > 40) {
+            return relDiff;
+        }
+        return a.distanceMeters - b.distanceMeters;
+    });
+
+    // 5. Format results with human-readable distance badge
+    return unique.slice(0, 7).map((item) => ({
+        displayName: item.displayName,
+        lat: item.lat,
+        lng: item.lng,
+        distanceMeters: item.distanceMeters,
+        distanceFormatted: formatDistance(item.distanceMeters),
+    }));
 };
 
 /** GET /api/geocode?q=... single lookup */

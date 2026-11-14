@@ -69,7 +69,7 @@ export function createUserPuckIcon(heading = null) {
           ${heading != null ? '<div class="realtime-radar-cone"></div>' : ''}
           ${heading != null ? '<div class="realtime-heading-arrow"></div>' : ''}
           <div class="realtime-puck-core">
-            <span style="font-size: 14px;">🦯</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="7"/></svg>
           </div>
         </div>
       </div>

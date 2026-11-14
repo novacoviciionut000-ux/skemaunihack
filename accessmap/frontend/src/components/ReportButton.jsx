@@ -13,6 +13,8 @@ import {
   Loader2,
   Crosshair,
   Send,
+  User as UserIcon,
+  MapPin,
 } from 'lucide-react';
 import { submitReport } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -261,7 +263,10 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                 marginBottom: 12,
                 fontWeight: 500
               }}>
-                <span>👤 Raportezi ca: <strong>{user.fullName || user.username}</strong></span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <UserIcon size={14} />
+                  Raportezi ca: <strong>{user.fullName || user.username}</strong>
+                </span>
               </div>
             )}
 
@@ -288,8 +293,9 @@ export default function ReportButton({ onReportAdded, userLocation, onRequestLoc
                       Detectare semnal GPS...
                     </div>
                   ) : detectedCoords ? (
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#15803d' }}>
-                      📍 {detectedCoords.lat.toFixed(5)}, {detectedCoords.lng.toFixed(5)}
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#15803d', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <MapPin size={14} />
+                      {detectedCoords.lat.toFixed(5)}, {detectedCoords.lng.toFixed(5)}
                     </div>
                   ) : (
                     <div style={{ fontSize: 12, color: '#475569' }}>Timișoara Centru</div>

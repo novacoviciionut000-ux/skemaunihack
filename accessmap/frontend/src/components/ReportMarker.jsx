@@ -11,7 +11,7 @@ const OBSTACLE_CONFIGS = {
     bgColor: '#fef2f2',
     borderColor: '#fca5a5',
     svg: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`,
-    badgeIcon: '🚫',
+    badgeIcon: '✕',
   },
   NO_RAMP: {
     label: 'Trepte fără rampă de acces',
@@ -19,7 +19,7 @@ const OBSTACLE_CONFIGS = {
     bgColor: '#fff7ed',
     borderColor: '#fdba74',
     svg: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19h4v-4h4v-4h4V7h3"/></svg>`,
-    badgeIcon: '🪜',
+    badgeIcon: '▤',
   },
   STAIRS_NO_RAMP: {
     label: 'Trepte fără rampă de acces',
@@ -27,7 +27,7 @@ const OBSTACLE_CONFIGS = {
     bgColor: '#fff7ed',
     borderColor: '#fdba74',
     svg: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19h4v-4h4v-4h4V7h3"/></svg>`,
-    badgeIcon: '🪜',
+    badgeIcon: '▤',
   },
   BROKEN_ELEVATOR: {
     label: 'Lift / elevator defect',
@@ -35,7 +35,7 @@ const OBSTACLE_CONFIGS = {
     bgColor: '#f5f3ff',
     borderColor: '#c4b5fd',
     svg: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><polyline points="9 8 12 5 15 8"/><line x1="12" y1="5" x2="12" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>`,
-    badgeIcon: '🛗',
+    badgeIcon: '⇕',
   },
   POTHOLE: {
     label: 'Groapă / pavaj distrus',
@@ -43,7 +43,7 @@ const OBSTACLE_CONFIGS = {
     bgColor: '#fffbeb',
     borderColor: '#fde68a',
     svg: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16c3-2 5 2 9 0s5-3 9-1"/><circle cx="12" cy="8" r="2.5" fill="white"/></svg>`,
-    badgeIcon: '🕳️',
+    badgeIcon: '◎',
   },
   CONSTRUCTION: {
     label: 'Zonă de șantier / lucrări',
@@ -51,7 +51,7 @@ const OBSTACLE_CONFIGS = {
     bgColor: '#fef2f2',
     borderColor: '#fecaca',
     svg: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 3 5 19 19 19"/><line x1="3" y1="21" x2="21" y2="21"/><line x1="8.5" y1="13.5" x2="15.5" y2="13.5"/></svg>`,
-    badgeIcon: '🚧',
+    badgeIcon: '▲',
   },
   OTHER: {
     label: 'Alt obstacol de accesibilitate',
@@ -59,7 +59,7 @@ const OBSTACLE_CONFIGS = {
     bgColor: '#f8fafc',
     borderColor: '#cbd5e1',
     svg: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="1" fill="white"/></svg>`,
-    badgeIcon: '⚠️',
+    badgeIcon: '!',
   },
 };
 
@@ -145,7 +145,7 @@ export default function ReportMarker({ report }) {
 
           {/* Coordinates info */}
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 10 }}>
-            📍 {Number(report.lat).toFixed(5)}, {Number(report.lng).toFixed(5)}
+            Coord: {Number(report.lat).toFixed(5)}, {Number(report.lng).toFixed(5)}
           </div>
 
           {/* Upvote & confirmation action */}
@@ -177,7 +177,7 @@ export default function ReportMarker({ report }) {
                 transition: 'all 0.15s ease',
               }}
             >
-              {voted ? '✓ Confirmat' : '👍 Confirmă'}
+              {voted ? 'Confirmat' : 'Confirmă'}
             </button>
           </div>
         </div>

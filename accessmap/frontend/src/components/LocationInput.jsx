@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Loader2, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Search, X, Loader2, MapPin, Navigation } from 'lucide-react';
 import { searchSuggestions } from '../api/client';
 
 export default function LocationInput({
@@ -11,6 +11,7 @@ export default function LocationInput({
   onSelect,
   onClear,
   onFocus,
+  userLocation,
 }) {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -25,8 +26,8 @@ export default function LocationInput({
   // If a point was selected via map click or external state, format the display
   useEffect(() => {
     if (point) {
-      if (!query || query.startsWith('📍') || query.startsWith('🏁') || query.includes('(')) {
-        setQuery(`📍 ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`);
+      if (!query || query.startsWith('Loc:') || query.startsWith('Dest:') || query.includes('(')) {
+        setQuery(`Loc: ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`);
       }
     } else {
       setQuery('');
@@ -44,6 +45,22 @@ export default function LocationInput({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const fetchSuggestions = useCallback(
+    async (searchTerm) => {
+      setIsLoading(true);
+      try {
+        const results = await searchSuggestions(searchTerm, userLocation);
+        setSuggestions(results);
+        setIsOpen(results.length > 0);
+      } catch (err) {
+        console.error('Autocomplete error:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [userLocation]
+  );
+
   const handleInputChange = (e) => {
     const val = e.target.value;
     setQuery(val);
@@ -51,23 +68,24 @@ export default function LocationInput({
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
-    if (val.trim().length >= 2) {
+    if (val.trim().length >= 1) {
       setIsLoading(true);
-      debounceTimer.current = setTimeout(async () => {
-        try {
-          const results = await searchSuggestions(val);
-          setSuggestions(results);
-          setIsOpen(results.length > 0);
-        } catch (err) {
-          console.error('Autocomplete error:', err);
-        } finally {
-          setIsLoading(false);
-        }
-      }, 250);
+      debounceTimer.current = setTimeout(() => {
+        fetchSuggestions(val);
+      }, 150);
     } else {
-      setSuggestions([]);
-      setIsOpen(false);
-      setIsLoading(false);
+      // Când șterge textul, afișăm direct cele mai apropiate destinații
+      fetchSuggestions('');
+    }
+  };
+
+  const handleFocus = () => {
+    if (onFocus) onFocus();
+    // Dacă nu are query sau este scurt, încărcăm direct cele mai apropiate locații de utilizator
+    if (!query || query.startsWith('Loc:') || query.length < 2) {
+      fetchSuggestions('');
+    } else if (suggestions.length > 0) {
+      setIsOpen(true);
     }
   };
 
@@ -138,10 +156,7 @@ export default function LocationInput({
             type="text"
             value={query}
             onChange={handleInputChange}
-            onFocus={() => {
-              if (onFocus) onFocus();
-              if (suggestions.length > 0 && query.trim().length >= 2) setIsOpen(true);
-            }}
+            onFocus={handleFocus}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             style={{
@@ -192,14 +207,32 @@ export default function LocationInput({
           right: 0,
           background: 'white',
           borderRadius: 14,
-          border: '1px solid #e5e7eb',
-          boxShadow: '0 12px 30px rgba(0,0,0,0.15)',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 14px 35px rgba(0,0,0,0.14)',
           zIndex: 2000,
           overflow: 'hidden',
-          maxHeight: 260,
+          maxHeight: 280,
           overflowY: 'auto',
           animation: 'fadeIn 0.15s ease-out',
         }}>
+          {/* Section header */}
+          <div style={{
+            padding: '7px 12px',
+            background: '#f8fafc',
+            borderBottom: '1px solid #f1f5f9',
+            fontSize: 10.5,
+            fontWeight: 700,
+            color: '#64748b',
+            letterSpacing: '0.4px',
+            textTransform: 'uppercase',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <span>Locații apropiate (după distanță)</span>
+            <span style={{ fontSize: 10, color: '#94a3b8' }}>Cele mai apropiate primele</span>
+          </div>
+
           {suggestions.map((item, idx) => {
             const parts = item.displayName.split(',');
             const primaryTitle = parts[0];
@@ -212,9 +245,10 @@ export default function LocationInput({
                 onClick={() => handleSelectSuggestion(item)}
                 onMouseEnter={() => setActiveIndex(idx)}
                 style={{
-                  padding: '10px 14px',
+                  padding: '10px 12px',
                   display: 'flex',
-                  alignItems: 'flex-start',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                   gap: 10,
                   cursor: 'pointer',
                   background: isActive ? '#eff6ff' : 'transparent',
@@ -222,31 +256,53 @@ export default function LocationInput({
                   transition: 'background 0.1s ease',
                 }}
               >
-                <MapPin size={16} color={isActive ? '#2563eb' : '#9ca3af'} style={{ marginTop: 2, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: isActive ? '#1d4ed8' : '#1f2937',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {primaryTitle}
-                  </div>
-                  {secondaryTitle && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0, flex: 1 }}>
+                  <MapPin size={16} color={isActive ? '#2563eb' : '#9ca3af'} style={{ marginTop: 2, flexShrink: 0 }} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{
-                      fontSize: 11,
-                      color: '#6b7280',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: isActive ? '#1d4ed8' : '#1f2937',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
-                      marginTop: 1,
                     }}>
-                      {secondaryTitle}
+                      {primaryTitle}
                     </div>
-                  )}
+                    {secondaryTitle && (
+                      <div style={{
+                        fontSize: 11,
+                        color: '#6b7280',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        marginTop: 1,
+                      }}>
+                        {secondaryTitle}
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                {/* Distance pill (closer locations show up first with proximity badge) */}
+                {item.distanceFormatted && (
+                  <div style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: isActive ? '#1d4ed8' : '#3b82f6',
+                    background: isActive ? '#dbeafe' : '#eff6ff',
+                    padding: '3px 7px',
+                    borderRadius: 8,
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}>
+                    <Navigation size={10} style={{ transform: 'rotate(45deg)' }} />
+                    {item.distanceFormatted}
+                  </div>
+                )}
               </div>
             );
           })}

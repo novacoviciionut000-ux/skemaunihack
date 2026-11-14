@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { speechQueue } from '../utils/speechQueue';
 
 // ─── Comenzile vocale recunoscute ─────────────────────────────────────────────
 const CAMERA_TRIGGERS = [
@@ -67,21 +68,16 @@ export function useVoiceAssistant({
   const shouldRestartRef = useRef(false);  // controlăm restart-ul continuu
   const isSpeakingRef = useRef(false);     // blocăm microfonul în timp ce vorbește aplicația
 
-  // ─── TTS ─────────────────────────────────────────────────────────────────
+  // ─── TTS secvențial prin speechQueue ────────────────────────────────────
   const speak = useCallback((text, lang = 'ro-RO') => {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = lang;
-    utterance.rate = 1.05;
-    utterance.pitch = 1.0;
-
-    utterance.onstart = () => { isSpeakingRef.current = true; };
-    utterance.onend = () => { isSpeakingRef.current = false; };
-    utterance.onerror = () => { isSpeakingRef.current = false; };
-
-    window.speechSynthesis.speak(utterance);
+    isSpeakingRef.current = true;
+    speechQueue.speak(text, {
+      lang,
+      priority: 'high',
+    });
+    setTimeout(() => {
+      isSpeakingRef.current = false;
+    }, Math.max(2000, text.split(' ').length * 500));
   }, []);
 
   // ─── Procesare rezultat recunoscut ───────────────────────────────────────

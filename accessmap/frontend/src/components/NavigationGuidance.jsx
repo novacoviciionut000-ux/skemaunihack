@@ -21,6 +21,7 @@ import {
   Camera,
 } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { speechQueue } from '../utils/speechQueue';
 
 export function getManeuverIcon(maneuver, size = 26) {
   switch (maneuver) {
@@ -92,17 +93,7 @@ export default function NavigationGuidance({
     }
 
     lastSpokenRef.current = { text: prompt, stepId, milestone, time: now };
-
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(prompt);
-      utterance.lang = 'ro-RO';
-      utterance.rate = 1.05;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
-    } catch (e) {
-      console.warn('Voice guidance speech synthesis error:', e);
-    }
+    speechQueue.speak(prompt, { priority: guidance.isImminent ? 'urgent' : 'high' });
   }, [
     guidance?.voicePrompt,
     guidance?.isImminent,

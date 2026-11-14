@@ -147,6 +147,7 @@ export default function Sidebar({
               iconBg="#dcfce7"
               point={start}
               placeholder="Punct de plecare — caută adresa sau selectează pe hartă"
+              userLocation={userLocation}
               onSelect={(place) => {
                 onSetStart({ lat: place.lat, lng: place.lng });
                 setPlacingMode('end');
@@ -162,6 +163,7 @@ export default function Sidebar({
               iconBg="#dbeafe"
               point={destination}
               placeholder="Destinație — caută adresa sau selectează pe hartă"
+              userLocation={userLocation}
               onSelect={(place) => {
                 onSetDestination({ lat: place.lat, lng: place.lng });
                 setPlacingMode(null);

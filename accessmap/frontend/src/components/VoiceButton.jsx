@@ -139,8 +139,8 @@ export default function VoiceButton({
         : '0 4px 16px rgba(37,99,235,0.4)');
 
   const btnLabel = alwaysOn
-    ? (isListening ? '🎙️ Ascult...' : '🟢 Mereu activ – aștept comandă')
-    : (isListening ? '🎙️ Ascult... (apasă pt a opri)' : '🎤 Apasă și spune comanda');
+    ? (isListening ? 'Ascult...' : 'Mereu activ — aștept comandă')
+    : (isListening ? 'Ascult... (apasă pt a opri)' : 'Apasă și spune comanda');
 
   return (
     <div
@@ -228,8 +228,8 @@ export default function VoiceButton({
           <circle cx="12" cy="12" r="2" fill="currentColor"/>
         </svg>
         {alwaysOn
-          ? '🟢 Microfon mereu activ — apasă pentru a opri'
-          : '⬜ Activează microfon permanent'}
+          ? 'Microfon mereu activ — apasă pentru a opri'
+          : 'Activează microfon permanent'}
       </button>
 
       {/* ── Indicator permisiune microfon ── */}
@@ -240,7 +240,7 @@ export default function VoiceButton({
           color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)',
           fontFamily: 'system-ui, sans-serif',
         }}>
-          🔒 Permisiune microfon refuzată — apasă 🔒 în bara browserului și permite microfonul.
+          Permisiune microfon refuzată — apasă pictograma de blocare din bara browserului și permite microfonul.
         </div>
       )}
 
