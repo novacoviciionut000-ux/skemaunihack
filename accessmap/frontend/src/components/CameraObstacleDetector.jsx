@@ -28,7 +28,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { getManeuverIcon } from './NavigationGuidance';
-import { speechQueue } from '../utils/speechQueue';
+import { speechQueue, playAlarmBeep, playTiltBeep, unlockAudioContext } from '../utils/speechQueue';
 import {
   loadObstacleModel,
   captureFrameSample,
@@ -65,31 +65,6 @@ const TILT_DOWN_EXIT_DEG = 32;
 const TILT_ROLL_ENTER_DEG = 40;
 const TILT_ROLL_EXIT_DEG = 32;
 
-function playTiltFeedbackTone(audioCtx) {
-  if (!audioCtx) return;
-  try {
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-    const now = audioCtx.currentTime;
-    // Two short gentle low-mid pulses (works on iPhone where navigator.vibrate is unsupported)
-    [0, 0.14].forEach((offset, idx) => {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(idx === 0 ? 300 : 240, now + offset);
-      gain.gain.setValueAtTime(0.001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.095);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(now + offset);
-      osc.stop(now + offset + 0.1);
-    });
-  } catch {
-    // Non-fatal
-  }
-}
 
 export default function CameraObstacleDetector({
   isOpen,
@@ -124,7 +99,6 @@ export default function CameraObstacleDetector({
   const lastTiltVibrateRef = useRef(0);
   const lastTiltSpokenRef = useRef({ reason: null, time: 0 });
   const tiltSmoothedRef = useRef({ beta: null, gamma: null, activeReason: null });
-  const audioCtxRef = useRef(null);
   const lastSidewalkEventRef = useRef({ status: '', time: 0 });
   const hadActiveAlertRef = useRef(false);
   const isStartingRef = useRef(false);
@@ -197,6 +171,7 @@ export default function CameraObstacleDetector({
 
     // Ensure audio is unlocked on mobile
     speechQueue.unlock();
+    unlockAudioContext();
 
     // Request iOS orientation permission on user gesture if available
     if (
@@ -204,19 +179,6 @@ export default function CameraObstacleDetector({
       typeof DeviceOrientationEvent.requestPermission === 'function'
     ) {
       DeviceOrientationEvent.requestPermission().catch(() => {});
-    }
-
-    // Unlock Web Audio on user gesture for audio feedback pulse
-    if (!audioCtxRef.current && typeof window !== 'undefined') {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) {
-        try {
-          audioCtxRef.current = new AudioCtx();
-        } catch {}
-      }
-    }
-    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume().catch(() => {});
     }
 
     const handleOrientation = (event) => {
@@ -270,7 +232,7 @@ export default function CameraObstacleDetector({
           if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
             navigator.vibrate([200, 90, 200]);
           }
-          playTiltFeedbackTone(audioCtxRef.current);
+          playTiltBeep();
           emitTiltWarningEvent({
             beta: Math.round(beta),
             gamma: Math.round(state.gamma),
@@ -584,12 +546,18 @@ export default function CameraObstacleDetector({
             lastSidewalkEventRef.current = { action: sidewalk.action, time: now };
             emitSidewalkStatusEvent({ ...sidewalk, timestamp: now });
 
-            // Audible warning and safe direction correction for visually impaired user
+            // Alarm beep when path is blocked/unknown — plays concurrently with TTS
+            if (sidewalk.action === 'stop' || sidewalk.action === 'unknown') {
+              playAlarmBeep();
+            }
+
+            // TTS correction — priority based on severity
             if (voiceEnabled !== false) {
-              speechQueue.speak(sidewalk.correctionRo, { priority: 'urgent' });
+              const swPriority = sidewalk.action === 'stop' ? 'danger' : 'urgent';
+              speechQueue.speak(sidewalk.correctionRo, { priority: swPriority });
             }
             if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-              navigator.vibrate([220, 90, 220]);
+              navigator.vibrate(sidewalk.action === 'stop' ? [300, 100, 300, 100, 300] : [220, 90, 220]);
             }
           }
 
@@ -640,9 +608,14 @@ export default function CameraObstacleDetector({
               emitObstacleAlertEvent(payload);
               if (onObstacleAlert) onObstacleAlert(payload);
 
-              // Avertizare vocală audio secvențială pentru obstacole și semafoare
+              // Avertizare vocală — prioritate bazată pe severitate
               if (!needsSidewalkWarning && voiceEnabled !== false) {
-                speechQueue.speak(primaryThreat.messageRo, { priority: 'high' });
+                const obsPriority = primaryThreat.severity === 'danger' ? 'danger' : 'high';
+                // Alarm beep concurent cu TTS pentru pericol iminent
+                if (primaryThreat.severity === 'danger') {
+                  playAlarmBeep();
+                }
+                speechQueue.speak(primaryThreat.messageRo, { priority: obsPriority });
               }
             }
           } else {
@@ -672,20 +645,8 @@ export default function CameraObstacleDetector({
       isStartingRef.current = true;
       setError(null);
 
-      // Unlock Web Audio on user gesture (used for iPhone tilt feedback since iOS lacks navigator.vibrate)
-      if (!audioCtxRef.current && typeof window !== 'undefined') {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-          try {
-            audioCtxRef.current = new AudioCtx();
-          } catch {
-            // Non-fatal
-          }
-        }
-      }
-      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-        audioCtxRef.current.resume().catch(() => {});
-      }
+      // Unlock Web Audio on user gesture (used for alarm beeps — shared AudioContext from speechQueue)
+      unlockAudioContext();
 
       // Request iOS 13+ DeviceOrientation permission on user gesture if needed
       if (
