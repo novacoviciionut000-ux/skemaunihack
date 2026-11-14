@@ -15,16 +15,16 @@
 
 const PRIORITY_WEIGHT = { danger: 4, urgent: 3, high: 2, normal: 1 };
 
+const IS_IOS =
+  typeof navigator !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
 const TTL_MS = 4_000;
 const MAX_QUEUE = 3;
 const REPEAT_COOLDOWN_MS = 2_500;
 const CANCEL_SETTLE_MS = IS_IOS ? 160 : 60; // speak() right after cancel() is dropped by iOS Safari and Chrome
 const DEFAULT_LANG = 'ro-RO';
-
-const IS_IOS =
-  typeof navigator !== 'undefined' &&
-  (/iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 
 // Tiny silent WAV; playing it inside a gesture permanently unlocks audio.play() on iOS
 const SILENT_WAV =
