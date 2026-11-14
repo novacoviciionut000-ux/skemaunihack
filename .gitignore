@@ -9,4 +9,7 @@ accessmap/.run/
 # Local secrets
 .env
 !.env.example
-!accessmap/frontend/.env
+
+# Build output (rebuilt locally; previously committed copies contained secrets)
+accessmap/backend/target/
+accessmap/frontend/dist/

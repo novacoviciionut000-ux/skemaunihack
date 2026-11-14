@@ -4,7 +4,9 @@ import com.accessmap.auth.dto.*;
 import com.accessmap.auth.service.AuthService;
 import com.accessmap.auth.service.EmailService;
 import com.accessmap.common.ClientIp;
+import com.accessmap.auth.security.SessionCookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -30,9 +32,12 @@ public class AuthController {
     @Value("${auth.oauth.google.client-id:mock-google-client-id}")
     private String googleClientId;
 
-    public AuthController(AuthService authService, EmailService emailService) {
+    private final SessionCookie sessionCookie;
+
+    public AuthController(AuthService authService, EmailService emailService, SessionCookie sessionCookie) {
         this.authService = authService;
         this.emailService = emailService;
+        this.sessionCookie = sessionCookie;
     }
 
     @GetMapping("/oauth-config")
@@ -101,34 +106,40 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request,
+                                                 HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         AuthResponse response = authService.register(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        return ResponseEntity.status(HttpStatus.CREATED).body(startSession(response, httpRequest, httpResponse));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
-        String clientIp = extractClientIp(httpRequest);
-        AuthResponse response = authService.login(request, clientIp);
-        return ResponseEntity.ok(response);
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request,
+                                              HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        AuthResponse response = authService.login(request, extractClientIp(httpRequest));
+        return ResponseEntity.ok(startSession(response, httpRequest, httpResponse));
     }
 
     @PostMapping("/oauth")
-    public ResponseEntity<AuthResponse> oauthLogin(@Valid @RequestBody OAuthRequest request, HttpServletRequest httpRequest) {
-        String clientIp = extractClientIp(httpRequest);
-        AuthResponse response = authService.oauthLogin(request, clientIp);
-        return ResponseEntity.ok(response);
+    public ResponseEntity<AuthResponse> oauthLogin(@Valid @RequestBody OAuthRequest request,
+                                                   HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        AuthResponse response = authService.oauthLogin(request, extractClientIp(httpRequest));
+        return ResponseEntity.ok(startSession(response, httpRequest, httpResponse));
     }
 
     @PostMapping("/oauth/{provider}")
     public ResponseEntity<AuthResponse> oauthLoginWithProvider(
             @PathVariable String provider,
-            @RequestBody OAuthRequest request,
-            HttpServletRequest httpRequest) {
+            @Valid @RequestBody OAuthRequest request,
+            HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         request.setProvider(provider);
-        String clientIp = extractClientIp(httpRequest);
-        AuthResponse response = authService.oauthLogin(request, clientIp);
-        return ResponseEntity.ok(response);
+        AuthResponse response = authService.oauthLogin(request, extractClientIp(httpRequest));
+        return ResponseEntity.ok(startSession(response, httpRequest, httpResponse));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        sessionCookie.clear(httpRequest, httpResponse);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/me")
@@ -144,15 +155,24 @@ public class AuthController {
     }
 
     @PutMapping("/profile")
-    public ResponseEntity<UserProfileDto> updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
+    public ResponseEntity<UserProfileDto> updateProfile(@Valid @RequestBody UpdateProfileRequest request,
+                                                        HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        String username = auth.getName();
-        UserProfileDto updated = authService.updateProfile(username, request);
+        UserProfileDto updated = authService.updateProfile(auth.getName(), request);
+        // The token is keyed on the username; re-issue it so a renamed user stays logged in
+        sessionCookie.set(httpRequest, httpResponse, authService.issueToken(updated.getUsername()));
         return ResponseEntity.ok(updated);
+    }
+
+    /** Puts the JWT in the HttpOnly cookie and strips it from the JSON body. */
+    private AuthResponse startSession(AuthResponse response, HttpServletRequest req, HttpServletResponse res) {
+        sessionCookie.set(req, res, response.getToken());
+        response.setToken(null);
+        return response;
     }
 
     // Gestionare unificată a erorilor pentru răspunsuri JSON curate

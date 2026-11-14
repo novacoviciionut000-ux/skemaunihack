@@ -6,7 +6,6 @@ import {
   Polyline,
   Popup,
   Circle,
-  useMapEvents,
   useMap,
   ZoomControl,
 } from 'react-leaflet';
@@ -140,18 +139,6 @@ export const MAP_STYLES = {
   },
 };
 
-// Component that handles map click events
-function MapClickHandler({ onMapClick }) {
-  useMapEvents({
-    click(e) {
-      if (onMapClick) {
-        onMapClick({ lat: e.latlng.lat, lng: e.latlng.lng });
-      }
-    },
-  });
-  return null;
-}
-
 // Map center and flyTo controller
 function MapController({ centerTarget, followUser, userLocation }) {
   const map = useMap();
@@ -231,10 +218,8 @@ export default function Map({
   obstacles,
   savedDetours = [],
   nearbyDetour,
-  onMapClick,
   onStartChange,
   onDestinationChange,
-  placingMode,
   userLocation,
   centerTarget,
   isLocating,
@@ -247,8 +232,6 @@ export default function Map({
   const [activeStyle, setActiveStyle] = useState('osm');
   const [showStyleMenu, setShowStyleMenu] = useState(false);
   const currentTileConfig = MAP_STYLES[activeStyle] || MAP_STYLES.osm;
-
-  const cursorStyle = placingMode ? 'crosshair' : '';
 
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
@@ -395,7 +378,7 @@ export default function Map({
       <MapContainer
         center={[45.7489, 21.2087]}
         zoom={14}
-        style={{ height: '100%', width: '100%', cursor: cursorStyle }}
+        style={{ height: '100%', width: '100%' }}
         zoomControl={false}
       >
         {!isMobile && <ZoomControl position="bottomright" />}
@@ -408,7 +391,6 @@ export default function Map({
           maxZoom={currentTileConfig.maxZoom}
         />
 
-        <MapClickHandler onMapClick={onMapClick} />
         <MapController centerTarget={centerTarget} followUser={followUser} userLocation={userLocation} />
         <FitBounds start={start} destination={destination} routeData={routeData} />
 
@@ -484,7 +466,6 @@ export default function Map({
             popupText="Punct de plecare"
             onDragEnd={(pos) => {
               if (onStartChange) onStartChange(pos);
-              else if (onMapClick) onMapClick(pos);
             }}
           />
         )}

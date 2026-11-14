@@ -2,56 +2,22 @@
 // Connects to Spring Boot backend via Vite proxy (/api), with graceful fallbacks
 // so the UI remains interactive even while GraphHopper or the backend is warming up.
 
-const TOKEN_KEY = 'accessmap_jwt_token';
-const USER_KEY = 'accessmap_user_data';
-
-export const getStoredToken = () => {
-    try {
-        return localStorage.getItem(TOKEN_KEY) || null;
-    } catch {
-        return null;
-    }
-};
-
-export const setStoredAuth = (token, user) => {
-    try {
-        if (token) localStorage.setItem(TOKEN_KEY, token);
-        if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
-    } catch (e) {
-        console.warn('Could not save auth in localStorage:', e);
-    }
-};
-
-export const getStoredUser = () => {
-    try {
-        const u = localStorage.getItem(USER_KEY);
-        return u ? JSON.parse(u) : null;
-    } catch {
-        return null;
-    }
-};
-
-export const clearStoredAuth = () => {
-    try {
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
-    } catch (e) {
-        console.warn('Could not clear auth in localStorage:', e);
-    }
-};
+// The session JWT lives in an HttpOnly cookie set by the backend, so page scripts can't read it.
+// Remove what older versions of the app left in localStorage.
+try {
+    localStorage.removeItem('accessmap_jwt_token');
+    localStorage.removeItem('accessmap_user_data');
+} catch {
+    /* storage unavailable */
+}
 
 const request = async (url, options = {}) => {
-    const token = getStoredToken();
     const headers = {
         'Accept': 'application/json',
         ...(options.headers || {}),
     };
 
-    if (token && !headers['Authorization']) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const res = await fetch(url, { ...options, headers });
+    const res = await fetch(url, { ...options, headers, credentials: 'same-origin' });
     const text = await res.text();
     let data = null;
     try {
@@ -73,193 +39,63 @@ const request = async (url, options = {}) => {
     return data;
 };
 
+const postJson = (url, body) => request(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+});
+
 // ==================== AUTHENTICATION API ====================
 
-/**
- * POST /api/auth/login
- * @param {{ usernameOrEmail: string, password: string }} credentials
- */
-export const authLogin = async ({ usernameOrEmail, password }) => {
-    try {
-        const res = await request('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usernameOrEmail, password }),
-        });
-        if (res && res.token) {
-            setStoredAuth(res.token, res);
-        }
-        return res;
-    } catch (err) {
-        // Dacă backend-ul nu este pornit încă (ex. offline dev mode), oferim cont demo de rezervă
-        if (err.message && err.message.includes('Failed to fetch')) {
-            console.warn('Backend unavailable, using simulated local authentication for dev preview');
-            if (usernameOrEmail === 'demo' || usernameOrEmail === 'demo@accessmap.ro') {
-                const mock = {
-                    token: 'mock_jwt_token_demo_user',
-                    id: 999,
-                    username: 'utilizator_demo',
-                    email: 'demo@accessmap.ro',
-                    fullName: 'Utilizator Demo',
-                    role: 'ROLE_USER',
-                    provider: 'LOCAL',
-                    preferredProfile: 'low_vision',
-                    message: 'Autentificare demonstrativă offline reușită!',
-                };
-                setStoredAuth(mock.token, mock);
-                return mock;
-            }
-        }
-        throw err;
-    }
-};
+/** POST /api/auth/login -> user profile; the session cookie is set by the server */
+export const authLogin = ({ usernameOrEmail, password }) =>
+    postJson('/api/auth/login', { usernameOrEmail, password });
 
-/**
- * POST /api/auth/register
- * @param {{ username: string, email: string, password: string, fullName?: string, preferredProfile?: string }} data
- */
-export const authRegister = async (data) => {
-    try {
-        const res = await request('/api/auth/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
-        });
-        if (res && res.token) {
-            setStoredAuth(res.token, res);
-        }
-        return res;
-    } catch (err) {
-        if (err.message && err.message.includes('Failed to fetch')) {
-            console.warn('Backend unavailable, using simulated registration for dev preview');
-            const mock = {
-                token: 'mock_jwt_token_new_user',
-                id: Date.now(),
-                username: data.username,
-                email: data.email,
-                fullName: data.fullName || data.username,
-                role: 'ROLE_USER',
-                provider: 'LOCAL',
-                preferredProfile: data.preferredProfile || 'low_vision',
-                message: 'Cont demonstrativ creat offline!',
-            };
-            setStoredAuth(mock.token, mock);
-            return mock;
-        }
-        throw err;
-    }
-};
+/** POST /api/auth/register */
+export const authRegister = (data) => postJson('/api/auth/register', data);
 
 /**
  * POST /api/auth/oauth
- * @param {'google' | 'facebook'} provider
- * @param {{ token?: string, email: string, name?: string, providerId?: string, avatarUrl?: string }} payload
+ * @param {'google'} provider
+ * @param {{ token: string }} payload  identity is taken from the verified Google token server-side
  */
-export const authOAuth = async (provider, payload) => {
-    try {
-        const res = await request('/api/auth/oauth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider, ...payload }),
-        });
-        if (res && res.token) {
-            setStoredAuth(res.token, res);
-        }
-        return res;
-    } catch (err) {
-        if (err.message && err.message.includes('Failed to fetch')) {
-            console.warn('Backend unavailable, using simulated OAuth response for dev preview');
-            const mock = {
-                token: `mock_jwt_${provider}_token`,
-                id: Date.now(),
-                username: payload.name ? payload.name.toLowerCase().replace(/\s+/g, '_') : 'social_user',
-                email: payload.email || `${provider}_user@accessmap.ro`,
-                fullName: payload.name || `Utilizator ${provider.toUpperCase()}`,
-                avatarUrl: payload.avatarUrl || null,
-                role: 'ROLE_USER',
-                provider: provider.toUpperCase(),
-                preferredProfile: 'low_vision',
-                message: `Autentificare demonstrativă ${provider.toUpperCase()} reușită!`,
-            };
-            setStoredAuth(mock.token, mock);
-            return mock;
-        }
-        throw err;
-    }
-};
+export const authOAuth = (provider, payload) => postJson('/api/auth/oauth', { provider, ...payload });
 
-/**
- * GET /api/auth/me
- */
-export const authGetMe = async () => {
-    try {
-        const user = await request('/api/auth/me');
-        if (user) {
-            setStoredAuth(getStoredToken(), user);
-        }
-        return user;
-    } catch (err) {
-        if (err.status === 401) {
-            clearStoredAuth();
-        }
-        throw err;
-    }
-};
+/** POST /api/auth/logout: clears the HttpOnly session cookie */
+export const authLogout = () => request('/api/auth/logout', { method: 'POST' });
 
-/**
- * PUT /api/auth/profile
- */
-export const authUpdateProfile = async (profileData) => {
-    const updated = await request('/api/auth/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profileData),
-    });
-    if (updated) {
-        const current = getStoredUser() || {};
-        setStoredAuth(getStoredToken(), { ...current, ...updated });
-    }
-    return updated;
-};
+/** GET /api/auth/me */
+export const authGetMe = () => request('/api/auth/me');
+
+/** PUT /api/auth/profile */
+export const authUpdateProfile = (profileData) => request('/api/auth/profile', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profileData),
+});
 
 export const authCheckUsername = async (username) => {
     if (!username || !username.trim()) {
         return { available: false, message: 'Numele de utilizator este obligatoriu.' };
     }
     try {
-        const res = await request(`/api/auth/check-username?username=${encodeURIComponent(username.trim())}`);
-        return res;
-    } catch (err) {
-        // Fallback dacă serverul nu răspunde temporar
+        return await request(`/api/auth/check-username?username=${encodeURIComponent(username.trim())}`);
+    } catch {
         return { available: true, message: 'Verificarea nu a putut fi efectuată acum.' };
     }
 };
 
-/**
- * GET /api/auth/oauth-config
- */
+/** GET /api/auth/oauth-config */
 export const authGetOAuthConfig = async () => {
     try {
         return await request('/api/auth/oauth-config');
-    } catch (e) {
-        return {
-            googleClientId: 'mock-google-client-id',
-            googleConfigured: false,
-            mailConfigured: false
-        };
+    } catch {
+        return { googleClientId: null, googleConfigured: false, mailConfigured: false };
     }
 };
 
-/**
- * POST /api/auth/test-email
- */
-export const authTestEmail = async (toEmail) => {
-    return await request('/api/auth/test-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toEmail })
-    });
-};
+/** POST /api/auth/test-email: sends to the logged-in user's own address */
+export const authTestEmail = () => request('/api/auth/test-email', { method: 'POST' });
 
 // ==================== ROUTING & REPORTS API ====================
 

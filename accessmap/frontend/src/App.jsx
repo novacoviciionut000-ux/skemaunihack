@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { MapPin, Flag, ShieldAlert } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
 import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import RouteInfo from './components/RouteInfo';
@@ -37,7 +37,6 @@ export default function App() {
   const [destination, setDestination] = useState(null);
   const [routeData, setRouteData] = useState(null);
   const [obstacles, setObstacles] = useState([]);
-  const [placingMode, setPlacingMode] = useState('start'); // 'start' | 'end' | null
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -277,7 +276,6 @@ export default function App() {
       
       const destCoords = { lat: dest.lat, lng: dest.lng };
       setDestination(destCoords);
-      setPlacingMode(null);
       setCenterTarget({ lat: dest.lat, lng: dest.lng, zoom: 15 });
 
       // O comandă vocală ("Du-mă la ...") pornește mereu de la poziția curentă, dacă o știm
@@ -307,25 +305,6 @@ export default function App() {
       }
     },
     [start, userLocation]
-  );
-
-  const handleMapClick = useCallback(
-    (latlng) => {
-      if (placingMode === 'start') {
-        setStart(latlng);
-        setPlacingMode('end');
-      } else if (placingMode === 'end') {
-        setDestination(latlng);
-        setPlacingMode(null);
-      } else {
-        // If both are placed, clicking again resets start
-        setStart(latlng);
-        setDestination(null);
-        setRouteData(null);
-        setPlacingMode('end');
-      }
-    },
-    [placingMode]
   );
 
   // Center on user GPS position
@@ -423,7 +402,6 @@ export default function App() {
     setDestination(null);
     setRouteData(null);
     setError(null);
-    setPlacingMode('start');
     handleStopNavigation();
   };
 
@@ -437,17 +415,14 @@ export default function App() {
         obstacles={obstacles}
         savedDetours={savedDetours}
         nearbyDetour={nearbyDetour}
-        onMapClick={handleMapClick}
-        placingMode={placingMode}
         userLocation={userLocation}
         onUserLocation={setUserLocation}
         centerTarget={centerTarget}
         onLocateMe={handleLocateMe}
         isLocating={isLocating}
-        onSetStart={(coords) => {
-          setStart(coords);
-          setPlacingMode('end');
-        }}
+        onUseAsStart={setStart}
+        onStartChange={setStart}
+        onDestinationChange={setDestination}
         profile={profile}
         followUser={followUser && isNavigating}
       />
@@ -485,37 +460,6 @@ export default function App() {
         currentProfile={profile}
         onProfileChange={setProfile}
       />
-
-      {/* Top instruction banner */}
-      {!isNavigating && placingMode && (
-        <div style={{
-          position: 'absolute',
-          top: isMobile ? 60 : 16,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 999,
-          background: placingMode === 'start' ? '#2563eb' : '#16a34a',
-          color: 'white',
-          padding: isMobile ? '8px 14px' : '10px 24px',
-          borderRadius: 12,
-          fontSize: isMobile ? 12.5 : 14,
-          fontWeight: 600,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-          pointerEvents: 'none',
-          fontFamily: 'system-ui, sans-serif',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          maxWidth: isMobile ? 'calc(100vw - 24px)' : 'none',
-          whiteSpace: isMobile ? 'normal' : 'nowrap',
-          textAlign: 'center',
-        }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-            {placingMode === 'start' ? <MapPin size={16} /> : <Flag size={16} />}
-          </span>
-          {placingMode === 'start' ? 'Apasă pe hartă pentru punctul de plecare' : 'Apasă pe hartă pentru destinație'}
-        </div>
-      )}
 
       {/* Banner de urgență activat prin comandă vocală ("Ajutor" / "112") */}
       {emergencyActive && (
@@ -626,11 +570,7 @@ export default function App() {
         start={start}
         destination={destination}
         onSetStart={setStart}
-        onSetDestination={(dest) => {
-          setDestination(dest);
-          setPlacingMode(null);
-        }}
-        setPlacingMode={setPlacingMode}
+        onSetDestination={setDestination}
         userLocation={userLocation}
         onRequestLocate={(coords) => {
           setUserLocation(coords);

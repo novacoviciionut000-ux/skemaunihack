@@ -1,16 +1,12 @@
 # Secrets come from environment variables or a local, git-ignored .env file
 # (accessmap/.env or the repository root). See .env.example.
-supabase:
-  url: "https://***REMOVED***.supabase.co"
-  key: "***REMOVED***"
-
 spring:
   config:
     import: "optional:file:.env[.properties],optional:file:../.env[.properties],optional:file:../../.env[.properties]"
   datasource:
     # 6543 = Supabase transaction pooler (5432 session pooler e limitat la 15 clienti in total)
-    url: "${DB_URL:jdbc:postgresql://aws-0-eu-central-1.pooler.supabase.com:6543/postgres?prepareThreshold=0}"
-    username: "${DB_USERNAME:postgres.***REMOVED***}"
+    url: "${DB_URL}"
+    username: "${DB_USERNAME}"
     password: "${DB_PASSWORD}"
     driver-class-name: org.postgresql.Driver
     hikari:

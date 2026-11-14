@@ -48,7 +48,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // Dezactivăm CSRF deoarece API-ul este complet stateless bazat pe JWT în antetul Authorization
+                // CSRF token not needed: the session cookie is SameSite=Strict, so the browser never
+                // attaches it to requests started by another site
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 // Nu păstrăm sesiuni pe server (Stateless REST)
@@ -63,7 +64,7 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         // 1. Endpoint-urile publice de autentificare
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login",
-                                "/api/auth/oauth", "/api/auth/oauth/*").permitAll()
+                                "/api/auth/oauth", "/api/auth/oauth/*", "/api/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/check-username", "/api/auth/oauth-config").permitAll()
                         // 2. Navigarea, TTS și harta sunt publice
                         .requestMatchers(HttpMethod.GET, "/api/v1/**").permitAll()
@@ -88,7 +89,6 @@ public class SecurityConfig {
         configuration.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "X-Requested-With"));
-        configuration.setExposedHeaders(List.of("Authorization"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 

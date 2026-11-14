@@ -35,6 +35,9 @@ public class AuthService {
     private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[A-Za-z])(?=.*\\d).{8,}$");
     private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_.-]{3,30}$");
     private static final String MOCK_GOOGLE_CLIENT_ID = "mock-google-client-id";
+    private static final int MAX_FAILURES_PER_IP = 20;
+    private static final int MAX_FAILURES_PER_ACCOUNT = 100;
+
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final HttpClient HTTP = HttpClient.newBuilder()
@@ -48,6 +51,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final RateLimitingService rateLimitingService;
+    private final String dummyPasswordHash;
     private final EmailService emailService;
 
     public AuthService(UserRepository userRepository,
@@ -59,6 +63,8 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.rateLimitingService = rateLimitingService;
+        // Real hash of a random value, compared against for unknown users to equalize timing
+        this.dummyPasswordHash = passwordEncoder.encode(java.util.UUID.randomUUID().toString());
         this.emailService = emailService;
     }
 
@@ -119,13 +125,17 @@ public class AuthService {
     @Transactional
     public AuthResponse login(LoginRequest request, String clientIp) {
         String identifier = request.getUsernameOrEmail().trim();
+        String[] keys = rateLimitKeys(clientIp, identifier);
 
-        // 1. Verificare Rate-Limiting împotriva atacurilor brute-force
-        if (rateLimitingService.isBlocked(clientIp) || rateLimitingService.isBlocked(identifier)) {
-            long remaining = Math.max(
-                    rateLimitingService.getRemainingLockoutSeconds(clientIp),
-                    rateLimitingService.getRemainingLockoutSeconds(identifier)
-            );
+        // 1. Rate limiting. Keyed per IP+account, per IP and (with a high threshold) per account,
+        // so an attacker can no longer lock a victim out with 5 wrong passwords.
+        long remaining = 0;
+        for (String key : keys) {
+            if (rateLimitingService.isBlocked(key)) {
+                remaining = Math.max(remaining, rateLimitingService.getRemainingLockoutSeconds(key));
+            }
+        }
+        if (remaining > 0) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                     "Prea multe încercări eșuate de autentificare. Încearcă din nou peste " + (remaining > 0 ? remaining + " secunde." : "câteva minute."));
         }
@@ -134,6 +144,8 @@ public class AuthService {
         Optional<User> userOpt = userRepository.findByUsernameOrEmail(identifier);
 
         if (userOpt.isEmpty()) {
+            // Same BCrypt cost as a real check, so response time doesn't reveal which accounts exist
+            passwordEncoder.matches(request.getPassword(), dummyPasswordHash);
             recordFailure(clientIp, identifier);
             throw new BadCredentialsException("Nume de utilizator/email sau parolă incorectă.");
         }
@@ -151,10 +163,11 @@ public class AuthService {
 
         // 4. Verificare dacă utilizatorul este exclusiv OAuth fără parolă locală
         if (user.getPasswordHash() == null) {
+            passwordEncoder.matches(request.getPassword(), dummyPasswordHash);
             recordFailure(clientIp, identifier);
-            String providerName = user.getProvider() != null ? user.getProvider().name() : "Google/Facebook";
-            throw new BadCredentialsException("Acest cont folosește autentificare prin " + providerName +
-                    ". Te rugăm să folosești butonul de conectare cu " + providerName + " sau să îți configurezi o parolă în profil.");
+            // Generic message: revealing "this account uses Google" confirms the account exists
+            throw new BadCredentialsException("Nume de utilizator/email sau parolă incorectă. "
+                    + "Dacă ți-ai creat contul cu Google, folosește butonul Google.");
         }
 
         // 5. Verificare hash parolă cu BCrypt
@@ -164,8 +177,7 @@ public class AuthService {
         }
 
         // 6. Succes: resetare încercări eșuate și actualizare timestamp login
-        rateLimitingService.resetAttempts(clientIp);
-        rateLimitingService.resetAttempts(identifier);
+        rateLimitingService.resetAttempts(keys[0]); // the IP+account pair
         user.setFailedAttempts(0);
         user.setLockoutUntil(null);
         user.setLastLoginAt(LocalDateTime.now());
@@ -240,10 +252,15 @@ public class AuthService {
             // Utilizator existent: actualizăm/legăm identitatea OAuth
             user = userOpt.get();
 
-            if (provider == AuthProvider.GOOGLE) {
-                if (providerId != null) user.setGoogleId(providerId);
-            } else if (provider == AuthProvider.FACEBOOK) {
-                if (providerId != null) user.setFacebookId(providerId);
+            if (provider == AuthProvider.GOOGLE && providerId != null && !providerId.equals(user.getGoogleId())) {
+                // First Google link to an account found by email. Local sign-ups don't verify the
+                // email, so the existing password may belong to someone who pre-registered the
+                // victim's address. Google just proved ownership; drop that password. The owner
+                // can set a new one from the profile page.
+                if (user.getGoogleId() == null && user.getPasswordHash() != null) {
+                    user.setPasswordHash(null);
+                }
+                user.setGoogleId(providerId);
             }
 
             if (!StringUtils.hasText(user.getProviderId()) && providerId != null) {
@@ -413,6 +430,14 @@ public class AuthService {
         return toUserProfileDto(user);
     }
 
+    /** New session token for an existing user (e.g. after a username change). */
+    @Transactional(readOnly = true)
+    public String issueToken(String username) {
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utilizatorul nu a fost găsit."));
+        return jwtUtil.generateToken(user);
+    }
+
     @Transactional
     public UserProfileDto updateProfile(String username, UpdateProfileRequest request) {
         User user = userRepository.findByUsernameIgnoreCase(username)
@@ -509,8 +534,15 @@ public class AuthService {
         return response;
     }
 
+    private String[] rateLimitKeys(String clientIp, String identifier) {
+        String account = identifier.toLowerCase();
+        return new String[] {"pair:" + clientIp + "|" + account, "ip:" + clientIp, "acct:" + account};
+    }
+
     private void recordFailure(String clientIp, String identifier) {
-        rateLimitingService.recordFailedAttempt(clientIp);
-        rateLimitingService.recordFailedAttempt(identifier);
+        String[] keys = rateLimitKeys(clientIp, identifier);
+        rateLimitingService.recordFailedAttempt(keys[0]);                        // 5 tries per IP per account
+        rateLimitingService.recordFailedAttempt(keys[1], MAX_FAILURES_PER_IP);   // one IP guessing many accounts
+        rateLimitingService.recordFailedAttempt(keys[2], MAX_FAILURES_PER_ACCOUNT); // distributed guessing
     }
 }

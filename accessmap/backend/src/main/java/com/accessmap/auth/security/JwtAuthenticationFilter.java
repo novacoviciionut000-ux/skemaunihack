@@ -52,6 +52,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private String resolveToken(HttpServletRequest request) {
+        // Browser sessions use the HttpOnly cookie; the header remains for non-browser API clients
+        String cookieToken = SessionCookie.read(request);
+        if (StringUtils.hasText(cookieToken)) {
+            return cookieToken;
+        }
         String bearerToken = request.getHeader("Authorization");
         if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
             return bearerToken.substring(7);

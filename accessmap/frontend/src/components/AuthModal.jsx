@@ -16,11 +16,10 @@ import {
   ChevronRight,
   Settings,
   ExternalLink,
-  Send,
   Smartphone
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { authGetOAuthConfig, authTestEmail } from '../api/client';
+import { authGetOAuthConfig } from '../api/client';
 
 export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAuthSuccess }) {
   const { login, register, loginWithOAuth, checkUsername } = useAuth();
@@ -51,9 +50,6 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
 
   // Stare email și confirmare
   const [mailStatus, setMailStatus] = useState({ configured: false, deliveryMode: 'NONE' });
-  const [testEmailAddress, setTestEmailAddress] = useState('');
-  const [testEmailLoading, setTestEmailLoading] = useState(false);
-  const [testEmailResult, setTestEmailResult] = useState(null);
 
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -312,29 +308,6 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
     setGoogleConfigured(true);
     setShowGoogleConfig(false);
     setSuccess('Google Client ID configurat cu succes! Conectarea cu Google este acum activă.');
-  };
-
-  // Testare expediere email de confirmare
-  const handleSendTestEmail = async () => {
-    if (!testEmailAddress.trim()) {
-      return;
-    }
-    setTestEmailLoading(true);
-    setTestEmailResult(null);
-    try {
-      const res = await authTestEmail(testEmailAddress.trim());
-      setTestEmailResult({
-        success: true,
-        message: res.message || `Email expediat către ${testEmailAddress}`
-      });
-    } catch (e) {
-      setTestEmailResult({
-        success: false,
-        message: e.message || 'Eroare la expediere email.'
-      });
-    } finally {
-      setTestEmailLoading(false);
-    }
   };
 
   // Verificare unicitate username în timp real pe măsură ce utilizatorul tastează (debounced)
@@ -1189,86 +1162,6 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 </>
               )}
             </button>
-
-            {/* Secțiune Testare Notificare Email Live */}
-            <div style={{
-              marginTop: 10,
-              padding: '12px 14px',
-              backgroundColor: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: 12
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Mail size={14} color="#2563eb" />
-                  <span>Notificări Email de Securitate</span>
-                </span>
-                <span style={{
-                  fontSize: 11,
-                  padding: '2px 8px',
-                  borderRadius: 6,
-                  fontWeight: 600,
-                  backgroundColor: mailStatus.configured ? '#dcfce7' : '#fef3c7',
-                  color: mailStatus.configured ? '#15803d' : '#b45309'
-                }}>
-                  {mailStatus.configured ? 'Gmail SMTP Activ' : 'Dispecerat Local Activ'}
-                </span>
-              </div>
-
-              <p style={{ margin: '0 0 8px', fontSize: 11.5, color: '#64748b', lineHeight: 1.4 }}>
-                Fiecare autentificare generează automat un email oficial de confirmare. Poți testa trimiterea directă către adresa ta de email:
-              </p>
-
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input
-                  type="email"
-                  value={testEmailAddress}
-                  onChange={(e) => setTestEmailAddress(e.target.value)}
-                  placeholder="adresa.ta@gmail.com"
-                  style={{
-                    flex: 1,
-                    padding: '7px 10px',
-                    borderRadius: 8,
-                    border: '1px solid #cbd5e1',
-                    fontSize: 12,
-                    fontFamily: 'inherit',
-                    boxSizing: 'border-box'
-                  }}
-                />
-                <button
-                  type="button"
-                  disabled={testEmailLoading || !testEmailAddress.trim()}
-                  onClick={handleSendTestEmail}
-                  style={{
-                    padding: '7px 12px',
-                    backgroundColor: testEmailAddress.trim() ? '#2563eb' : '#94a3b8',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: 8,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: testEmailAddress.trim() ? 'pointer' : 'not-allowed',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4
-                  }}
-                >
-                  {testEmailLoading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                  <span>Trimite Test</span>
-                </button>
-              </div>
-
-              {testEmailResult && (
-                <div style={{
-                  marginTop: 6,
-                  fontSize: 11.5,
-                  color: testEmailResult.success ? '#15803d' : '#dc2626',
-                  fontWeight: 500
-                }}>
-                  {testEmailResult.message}
-                </div>
-              )}
-            </div>
 
             {/* Notă Securitate Cont */}
             <div style={{

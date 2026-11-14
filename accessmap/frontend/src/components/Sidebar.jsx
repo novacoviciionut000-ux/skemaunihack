@@ -15,7 +15,6 @@ export default function Sidebar({
   destination,
   onSetStart,
   onSetDestination,
-  setPlacingMode,
   userLocation,
   onRequestLocate,
   cameraOpen,
@@ -148,14 +147,12 @@ export default function Sidebar({
               iconColor="#16a34a"
               iconBg="#dcfce7"
               point={start}
-              placeholder="Punct de plecare — caută adresa sau selectează pe hartă"
+              placeholder="Punct de plecare — caută adresa"
               userLocation={userLocation}
               onSelect={(place) => {
                 onSetStart({ lat: place.lat, lng: place.lng });
-                setPlacingMode('end');
               }}
               onClear={() => onSetStart(null)}
-              onFocus={() => setPlacingMode('start')}
             />
 
             {/* Destination */}
@@ -164,14 +161,12 @@ export default function Sidebar({
               iconColor="#2563eb"
               iconBg="#dbeafe"
               point={destination}
-              placeholder="Destinație — caută adresa sau selectează pe hartă"
+              placeholder="Destinație — caută adresa"
               userLocation={userLocation}
               onSelect={(place) => {
                 onSetDestination({ lat: place.lat, lng: place.lng });
-                setPlacingMode(null);
               }}
               onClear={() => onSetDestination(null)}
-              onFocus={() => setPlacingMode('end')}
             />
           </div>
 

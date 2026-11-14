@@ -42,6 +42,11 @@ public class RateLimitingService {
     }
 
     public void recordFailedAttempt(String key) {
+        recordFailedAttempt(key, maxAttempts);
+    }
+
+    /** Same as {@link #recordFailedAttempt(String)} but with a custom lock threshold for this key. */
+    public void recordFailedAttempt(String key, int threshold) {
         cleanUp();
         attemptsCache.compute(key, (k, current) -> {
             Instant now = Instant.now();
@@ -51,7 +56,7 @@ public class RateLimitingService {
 
             int count = current.count + 1;
             Instant lockedUntil = current.lockedUntil;
-            if (count >= maxAttempts) {
+            if (count >= threshold) {
                 lockedUntil = now.plusSeconds(lockoutDurationSeconds);
             }
             return new AttemptInfo(count, current.windowExpiry, lockedUntil);
