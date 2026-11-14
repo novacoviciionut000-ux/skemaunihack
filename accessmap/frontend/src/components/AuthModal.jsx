@@ -47,6 +47,8 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
   const [showGoogleConfig, setShowGoogleConfig] = useState(false);
   const [customClientIdInput, setCustomClientIdInput] = useState('');
   const [googleSdkReady, setGoogleSdkReady] = useState(false);
+  // True once Google's official button is drawn; then our fallback button is hidden
+  const [officialGoogleButton, setOfficialGoogleButton] = useState(false);
 
   // Stare email și confirmare
   const [mailStatus, setMailStatus] = useState({ configured: false, deliveryMode: 'NONE' });
@@ -115,6 +117,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
             logo_alignment: 'left',
             width: 380,
           });
+          setOfficialGoogleButton(googleButtonRef.current.childElementCount > 0);
         }
 
         // 2. Afișare One Tap (arată automat conturile Google de pe telefon / browser)
@@ -707,11 +710,12 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                 width: '100%',
                 display: 'flex',
                 justifyContent: 'center',
-                minHeight: googleConfigured ? 42 : 0,
+                minHeight: officialGoogleButton ? 42 : 0,
               }}
             />
 
-            {/* Buton Principal Google Sign-In cu Account Picker nativ */}
+            {/* Fallback only if Google's official button couldn't be drawn (SDK blocked or not configured) */}
+            {!officialGoogleButton && (
             <button
               type="button"
               disabled={loading || !!socialLoading}
@@ -758,6 +762,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
                   : 'Continuă cu Contul Google'}
               </span>
             </button>
+            )}
 
             {/* Informare despre verificarea existenței conturilor Google */}
             <div style={{
