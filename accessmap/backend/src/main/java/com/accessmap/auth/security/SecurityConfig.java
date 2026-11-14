@@ -61,7 +61,7 @@ public class SecurityConfig {
                 }))
                 .authorizeHttpRequests(auth -> auth
                         // 1. Endpoint-urile de autentificare sunt complet publice
-                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/oauth/**").permitAll()
+                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/oauth/**", "/api/auth/check-username").permitAll()
                         // 2. Navigarea și harta sunt publice (pietoni, scaune cu rotile)
                         .requestMatchers("/api/v1/**").permitAll()
                         .requestMatchers("/api/geocode/**").permitAll()

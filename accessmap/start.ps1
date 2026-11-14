@@ -1,11 +1,12 @@
 # AccessMap - porneste tot proiectul: GraphHopper (Docker) + backend (Spring Boot) + frontend (Vite)
-# Utilizare (din folderul accessmap):
-#   .\start.ps1            porneste tot
-#   .\start.ps1 -Stop      opreste GraphHopper si inchide ferestrele backend/frontend
-#   .\start.ps1 -NoWait    nu mai asteapta ca GraphHopper sa fie gata
+# Utilizare (din folderul radacina sau accessmap):
+#   .\start.bat            porneste tot
+#   .\start.bat -NoDocker  porneste backend + frontend fara sa ceara Docker
+#   .\start.bat -Stop      opreste serviciile
 param(
     [switch]$Stop,
-    [switch]$NoWait
+    [switch]$NoWait,
+    [switch]$NoDocker
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,6 +20,7 @@ if (-not (Test-Path $mvnw)) {
 }
 
 function Info($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
+function Warn($msg) { Write-Host "!!  $msg" -ForegroundColor Yellow }
 function Fail($msg) { Write-Host "XX  $msg" -ForegroundColor Red; exit 1 }
 
 function Wait-Port($port, $name, $timeoutSec) {
@@ -28,30 +30,35 @@ function Wait-Port($port, $name, $timeoutSec) {
             Info "$name raspunde pe portul $port"
             return $true
         }
-        Start-Sleep -Seconds 5
+        Start-Sleep -Seconds 3
     }
-    Write-Host "!!  $name nu raspunde inca pe portul $port (continui oricum)" -ForegroundColor Yellow
+    Warn "$name nu raspunde inca pe portul $port (continui oricum)"
     return $false
 }
 
 # ---------- Stop ----------
 if ($Stop) {
     Info 'Opresc GraphHopper...'
-    Push-Location $root; docker compose stop graphhopper; Pop-Location
+    Push-Location $root
+    try { docker compose stop graphhopper } catch {}
+    Pop-Location
     Get-Process powershell, pwsh -ErrorAction SilentlyContinue |
         Where-Object { $_.MainWindowTitle -like 'AccessMap*' } |
         Stop-Process -Force
-    Info 'Oprit.'
+    Info 'Toate procesele au fost oprite.'
     exit 0
 }
 
-# ---------- Verificari ----------
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Fail 'Docker nu e instalat / nu e in PATH.' }
-if (-not (Get-Command npm -ErrorAction SilentlyContinue))    { Fail 'Node.js/npm nu e instalat / nu e in PATH.' }
+# ---------- Verificari de baza ----------
+if (-not (Get-Command npm -ErrorAction SilentlyContinue) -and -not (Get-Command npm.cmd -ErrorAction SilentlyContinue)) {
+    Fail 'Node.js / npm nu este instalat sau nu se afla in PATH.'
+}
+
 if (-not (Test-Path $mvnw) -and -not (Get-Command mvn -ErrorAction SilentlyContinue)) {
     Fail "Nu gasesc Maven wrapper-ul ($mvnw) si nici comanda 'mvn' nu e in PATH."
 }
 
+# Detectare automata JAVA_HOME
 if (-not $env:JAVA_HOME) {
     if (Get-Command java -ErrorAction SilentlyContinue) {
         try {
@@ -85,54 +92,79 @@ if (-not $env:JAVA_HOME) {
     }
 }
 if ($env:JAVA_HOME) {
-    Info "JAVA_HOME = $env:JAVA_HOME"
+    Info "JAVA_HOME detectat = $env:JAVA_HOME"
 }
 
-docker info *> $null
-if ($LASTEXITCODE -ne 0) { Fail 'Docker nu ruleaza. Porneste Docker Desktop si incearca din nou.' }
+# ---------- 1. GraphHopper (Optional daca Docker nu este pornit) ----------
+$hasDocker = $false
+if (-not $NoDocker -and (Get-Command docker -ErrorAction SilentlyContinue)) {
+    try {
+        docker info *> $null
+        if ($LASTEXITCODE -eq 0) {
+            $hasDocker = $true
+        }
+    } catch {}
+}
 
-# ---------- 1. GraphHopper ----------
-Info 'Pornesc GraphHopper (prima data: descarca harta + construieste graful, ~10-20 min)...'
-Push-Location $root
-docker compose up -d graphhopper
-Pop-Location
-if (-not $NoWait) { Wait-Port 8989 'GraphHopper' 1800 | Out-Null }
+if ($hasDocker) {
+    Info 'Pornesc GraphHopper (Docker)...'
+    Push-Location $root
+    try {
+        docker compose up -d graphhopper
+    } catch {
+        Warn 'GraphHopper nu a putut fi pornit prin Docker. Continui cu backend si frontend.'
+    }
+    Pop-Location
+    if (-not $NoWait -and $hasDocker) {
+        Wait-Port 8989 'GraphHopper' 30 | Out-Null
+    }
+} else {
+    Warn 'Docker Desktop nu ruleaza sau nu a fost gasit. Sarim peste GraphHopper!'
+    Warn 'Autentificarea, baza de date Supabase si interfata web vor functiona normal.'
+}
 
-# ---------- 2. Backend ----------
-Info 'Pornesc backend-ul (Spring Boot, :8080) intr-o fereastra noua...'
-$backendCmd = "`$host.UI.RawUI.WindowTitle='AccessMap backend'; `$env:JAVA_HOME='$env:JAVA_HOME'; Set-Location '$backendDir'; & '$mvnw' -f pom.xml spring-boot:run"
-Start-Process powershell -ArgumentList '-NoExit', '-Command', $backendCmd
+# ---------- 2. Backend (Spring Boot :8080) ----------
+Info 'Pornesc backend-ul (Spring Boot pe portul 8080) intr-o fereastra dedicata...'
+$backendCmd = "`$host.UI.RawUI.WindowTitle='AccessMap Backend (:8080)'; `$env:JAVA_HOME='$env:JAVA_HOME'; Set-Location '$backendDir'; & '$mvnw' -f pom.xml spring-boot:run"
+Start-Process powershell -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', $backendCmd
 
-# ---------- 3. Frontend ----------
+# ---------- 3. Frontend (Vite :3000) ----------
 if (-not (Test-Path (Join-Path $frontendDir 'node_modules'))) {
     Info 'Instalez dependintele frontend (npm install)...'
-    Push-Location $frontendDir; npm install; Pop-Location
+    Push-Location $frontendDir; cmd /c npm install; Pop-Location
 }
 
-# Verificare si reparare automata a binarului esbuild pentru Windows
+# Verificare si reparare automata esbuild pentru Windows
 $winEsbuild = Join-Path $frontendDir 'node_modules\@esbuild\win32-x64\esbuild.exe'
 if (-not (Test-Path $winEsbuild)) {
-    Write-Host "==> Lipseste binarul esbuild pentru Windows. Il repar automat..." -ForegroundColor Yellow
+    Warn 'Lipseste binarul esbuild pentru Windows. Il configurez automat...'
     Push-Location $frontendDir
-    try {
-        npm rebuild esbuild
-    } catch {}
+    try { cmd /c npm rebuild esbuild } catch {}
     if (-not (Test-Path $winEsbuild)) {
-        try {
-            npm install --save-optional @esbuild/win32-x64@0.18.20
-        } catch {}
+        try { cmd /c npm install --save-optional @esbuild/win32-x64@0.18.20 } catch {}
     }
     Pop-Location
 }
 
-Info 'Pornesc frontend-ul (Vite, :3000) intr-o fereastra noua...'
-$frontendCmd = "`$host.UI.RawUI.WindowTitle='AccessMap frontend'; Set-Location '$frontendDir'; npm run dev"
-Start-Process powershell -ArgumentList '-NoExit', '-Command', $frontendCmd
+Info 'Pornesc frontend-ul (Vite pe portul 3000) intr-o fereastra dedicata...'
+$frontendCmd = "`$host.UI.RawUI.WindowTitle='AccessMap Frontend (:3000)'; Set-Location '$frontendDir'; cmd /c npm run dev"
+Start-Process powershell -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', $frontendCmd
 
-# ---------- 4. Browser ----------
-if (Wait-Port 8080 'Backend' 180) { }
-Wait-Port 3000 'Frontend' 60 | Out-Null
+# ---------- 4. Asteptare si deschidere Browser ----------
+Info 'Astept pornirea serviciilor...'
+$backendReady = Wait-Port 8080 'Backend' 60
+$frontendReady = Wait-Port 3000 'Frontend' 30
+
 Start-Process 'http://localhost:3000'
 
-Info 'Gata! Frontend: http://localhost:3000 | Backend: http://localhost:8080 | GraphHopper: http://localhost:8989'
-Info 'Pentru oprire: .\start.ps1 -Stop'
+Write-Host ""
+Write-Host "==========================================================" -ForegroundColor Green
+Write-Host "   AccessMap este gata de utilizare!" -ForegroundColor Green
+Write-Host "   - Frontend UI:  http://localhost:3000" -ForegroundColor Cyan
+Write-Host "   - Backend API:  http://localhost:8080" -ForegroundColor Cyan
+if ($hasDocker) {
+    Write-Host "   - GraphHopper:  http://localhost:8989" -ForegroundColor Cyan
+}
+Write-Host "   Pentru oprire: .\start.bat -Stop" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Green
+Write-Host ""

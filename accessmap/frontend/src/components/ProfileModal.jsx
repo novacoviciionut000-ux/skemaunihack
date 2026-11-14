@@ -9,7 +9,8 @@ import {
   AlertCircle,
   Loader2,
   Calendar,
-  Accessibility
+  Accessibility,
+  Eye
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 

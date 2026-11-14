@@ -8,7 +8,8 @@ import {
   Shield,
   Check,
   Sparkles,
-  Accessibility
+  Accessibility,
+  Eye
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useIsMobile } from '../hooks/useIsMobile';

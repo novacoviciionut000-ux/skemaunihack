@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
     role VARCHAR(20) NOT NULL DEFAULT 'ROLE_USER',
     provider VARCHAR(20) NOT NULL DEFAULT 'LOCAL',
     provider_id VARCHAR(100),
+    google_id VARCHAR(100),
+    facebook_id VARCHAR(100),
     preferred_profile VARCHAR(30) DEFAULT 'wheelchair',
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     failed_attempts INT NOT NULL DEFAULT 0,
@@ -19,9 +21,17 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at TIMESTAMP
 );
 
--- Indexuri pentru performanță sporită la căutare / login
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+-- Asigură existența coloanelor pentru upgrade incremental
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(100);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_id VARCHAR(100);
+
+-- Indexuri unice case-insensitive pentru garantarea absolută a unicității
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users(LOWER(username));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email));
+
+-- Indexuri pentru căutare rapidă OAuth și securitate
+CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
+CREATE INDEX IF NOT EXISTS idx_users_facebook_id ON users(facebook_id);
 CREATE INDEX IF NOT EXISTS idx_users_provider ON users(provider, provider_id);
 
 -- 2. Tabela de rapoarte obstacole (dacă nu există deja)

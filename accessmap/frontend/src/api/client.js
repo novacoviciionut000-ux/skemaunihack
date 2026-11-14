@@ -222,6 +222,19 @@ export const authUpdateProfile = async (profileData) => {
     return updated;
 };
 
+export const authCheckUsername = async (username) => {
+    if (!username || !username.trim()) {
+        return { available: false, message: 'Numele de utilizator este obligatoriu.' };
+    }
+    try {
+        const res = await request(`/api/auth/check-username?username=${encodeURIComponent(username.trim())}`);
+        return res;
+    } catch (err) {
+        // Fallback dacă serverul nu răspunde temporar
+        return { available: true, message: 'Verificarea nu a putut fi efectuată acum.' };
+    }
+};
+
 // ==================== ROUTING & REPORTS API ====================
 
 // Backend Report { id, latitude, longitude, type, description, upvotes, active, authorId, authorName }

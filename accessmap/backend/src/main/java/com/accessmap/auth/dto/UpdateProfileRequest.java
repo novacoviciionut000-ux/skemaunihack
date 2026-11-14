@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Size;
 
 public class UpdateProfileRequest {
 
+    private String username;
     private String fullName;
     private String preferredProfile;
 
@@ -13,6 +14,9 @@ public class UpdateProfileRequest {
     private String newPassword;
 
     public UpdateProfileRequest() {}
+
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
 
     public String getFullName() { return fullName; }
     public void setFullName(String fullName) { this.fullName = fullName; }

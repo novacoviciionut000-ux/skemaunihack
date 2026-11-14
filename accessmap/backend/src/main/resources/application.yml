@@ -36,6 +36,16 @@ auth:
       client-id: "${GOOGLE_CLIENT_ID:mock-google-client-id}"
     facebook:
       app-id: "${FACEBOOK_APP_ID:mock-facebook-app-id}"
+
+mail:
+  enabled: ${MAIL_ENABLED:true}
+  smtp:
+    host: ${SMTP_HOST:smtp.gmail.com}
+    port: ${SMTP_PORT:465}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    from: ${SMTP_FROM:noreply.accessmap@gmail.com}
+
 google:
   maps:
     api-key: ***REMOVED***

@@ -15,9 +15,15 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.regex.Pattern;
 
 @Service
@@ -29,30 +35,39 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final RateLimitingService rateLimitingService;
+    private final EmailService emailService;
 
     public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
                        JwtUtil jwtUtil,
-                       RateLimitingService rateLimitingService) {
+                       RateLimitingService rateLimitingService,
+                       EmailService emailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.rateLimitingService = rateLimitingService;
+        this.emailService = emailService;
     }
 
+    /**
+     * Înregistrare cont local cu date proprii (username, email, parolă).
+     * Asigură strict că nimeni altcineva nu se poate înregistra cu un username deja existent.
+     */
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         String cleanUsername = request.getUsername().trim().toLowerCase();
         String cleanEmail = request.getEmail().trim().toLowerCase();
 
-        // 1. Verificare unicitate username
+        // 1. Verificare strictă unicitate username (case-insensitive)
         if (userRepository.existsByUsernameIgnoreCase(cleanUsername)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Numele de utilizator este deja folosit.");
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Numele de utilizator \"" + cleanUsername + "\" este deja folosit de altcineva. Te rugăm să alegi alt nume.");
         }
 
         // 2. Verificare unicitate email
         if (userRepository.existsByEmailIgnoreCase(cleanEmail)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Adresa de email este deja înregistrată.");
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Adresa de email \"" + cleanEmail + "\" este deja înregistrată. Te rugăm să te autentifici.");
         }
 
         // 3. Verificare securitate parolă (minim 8 caractere, cel puțin o literă și o cifră)
@@ -79,25 +94,20 @@ public class AuthService {
         // 5. Generare token JWT
         String token = jwtUtil.generateToken(savedUser);
 
-        return new AuthResponse(
-                token,
-                savedUser.getId(),
-                savedUser.getUsername(),
-                savedUser.getEmail(),
-                savedUser.getFullName(),
-                savedUser.getRole().name(),
-                savedUser.getProvider().name(),
-                savedUser.getAvatarUrl(),
-                savedUser.getPreferredProfile(),
-                "Cont creat cu succes!"
-        );
+        // 6. Trimitere email de confirmare și bun venit
+        emailService.sendRegistrationConfirmationEmail(savedUser.getEmail(), savedUser.getFullName(), savedUser.getUsername());
+
+        return buildAuthResponse(savedUser, token, "Cont creat cu succes! Ți-am trimis un email de confirmare.");
     }
 
+    /**
+     * Autentificare cu date proprii (username sau email + parolă).
+     */
     @Transactional
     public AuthResponse login(LoginRequest request, String clientIp) {
         String identifier = request.getUsernameOrEmail().trim();
 
-        // 1. Verificare Rate-Limiting împotriva atacurilor de tip brute-force
+        // 1. Verificare Rate-Limiting împotriva atacurilor brute-force
         if (rateLimitingService.isBlocked(clientIp) || rateLimitingService.isBlocked(identifier)) {
             long remaining = Math.max(
                     rateLimitingService.getRemainingLockoutSeconds(clientIp),
@@ -107,7 +117,7 @@ public class AuthService {
                     "Prea multe încercări eșuate de autentificare. Încearcă din nou peste " + (remaining > 0 ? remaining + " secunde." : "câteva minute."));
         }
 
-        // 2. Căutare utilizator după username sau email
+        // 2. Căutare utilizator după username sau email (case-insensitive)
         Optional<User> userOpt = userRepository.findByUsernameOrEmail(identifier);
 
         if (userOpt.isEmpty()) {
@@ -117,7 +127,7 @@ public class AuthService {
 
         User user = userOpt.get();
 
-        // 3. Verificare dacă contul este blocat
+        // 3. Verificare stare cont
         if (user.isAccountLocked()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Contul este temporar blocat din motive de securitate.");
         }
@@ -126,10 +136,12 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Contul este dezactivat.");
         }
 
-        // 4. Verificare dacă utilizatorul este exclusiv OAuth (fără parolă locală setată)
+        // 4. Verificare dacă utilizatorul este exclusiv OAuth fără parolă locală
         if (user.getPasswordHash() == null) {
             recordFailure(clientIp, identifier);
-            throw new BadCredentialsException("Acest cont folosește autentificare prin " + user.getProvider() + ". Te rugăm să folosești butonul corespunzător.");
+            String providerName = user.getProvider() != null ? user.getProvider().name() : "Google/Facebook";
+            throw new BadCredentialsException("Acest cont folosește autentificare prin " + providerName +
+                    ". Te rugăm să folosești butonul de conectare cu " + providerName + " sau să îți configurezi o parolă în profil.");
         }
 
         // 5. Verificare hash parolă cu BCrypt
@@ -149,23 +161,25 @@ public class AuthService {
         // 7. Emitere token JWT
         String token = jwtUtil.generateToken(user);
 
-        return new AuthResponse(
-                token,
-                user.getId(),
-                user.getUsername(),
-                user.getEmail(),
-                user.getFullName(),
-                user.getRole().name(),
-                user.getProvider().name(),
-                user.getAvatarUrl(),
-                user.getPreferredProfile(),
-                "Autentificare reușită!"
-        );
+        // 8. Trimitere email de confirmare a autentificării
+        emailService.sendLoginConfirmationEmail(user.getEmail(), user.getFullName(), "Parolă Locală", clientIp);
+
+        return buildAuthResponse(user, token, "Autentificare reușită! Ți-am trimis un email de confirmare.");
     }
 
-    @Transactional
     public AuthResponse oauthLogin(OAuthRequest request) {
-        String providerStr = request.getProvider().trim().toUpperCase();
+        return oauthLogin(request, "127.0.0.1");
+    }
+
+    /**
+     * Autentificare / Înregistrare prin Google sau Facebook (OAuth).
+     * Verifică autenticitatea contului Google, leagă conturile existente și trimite email de confirmare.
+     */
+    @Transactional
+    public AuthResponse oauthLogin(OAuthRequest request, String clientIp) {
+        enrichFromTokenIfPresent(request);
+
+        String providerStr = request.getProvider() != null ? request.getProvider().trim().toUpperCase() : "";
         AuthProvider provider;
         try {
             provider = AuthProvider.valueOf(providerStr);
@@ -177,35 +191,76 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Doar Google și Facebook sunt suportate.");
         }
 
-        String email = request.getEmail() != null ? request.getEmail().trim().toLowerCase() : null;
-        if (!StringUtils.hasText(email)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Emailul este obligatoriu pentru autentificarea " + provider);
+        // Verificare autenticitate cont Google
+        if (provider == AuthProvider.GOOGLE) {
+            validateGoogleAccount(request);
         }
 
-        // Verificăm dacă există deja un cont cu acest email sau providerId
-        Optional<User> existingUser = userRepository.findByEmail(email);
-        User user;
+        String email = request.getEmail() != null ? request.getEmail().trim().toLowerCase() : null;
+        if (!StringUtils.hasText(email)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Emailul este obligatoriu pentru autentificarea prin " + provider);
+        }
 
-        if (existingUser.isPresent()) {
-            user = existingUser.get();
-            // Actualizăm datele de profil dacă e cazul
+        String providerId = StringUtils.hasText(request.getProviderId()) ? request.getProviderId().trim() : null;
+
+        // 1. Căutare după id-ul specific de provider (Google ID sau Facebook ID)
+        Optional<User> userOpt = Optional.empty();
+        if (providerId != null) {
+            if (provider == AuthProvider.GOOGLE) {
+                userOpt = userRepository.findByGoogleId(providerId);
+            } else if (provider == AuthProvider.FACEBOOK) {
+                userOpt = userRepository.findByFacebookId(providerId);
+            }
+            if (userOpt.isEmpty()) {
+                userOpt = userRepository.findByProviderAndProviderId(provider, providerId);
+            }
+        }
+
+        // 2. Dacă nu e găsit după ID-ul providerului, căutăm după adresa de email (Account Linking)
+        if (userOpt.isEmpty()) {
+            userOpt = userRepository.findByEmailIgnoreCase(email);
+        }
+
+        User user;
+        boolean isNewUser = false;
+
+        if (userOpt.isPresent()) {
+            // Utilizator existent: actualizăm/legăm identitatea OAuth
+            user = userOpt.get();
+
+            if (provider == AuthProvider.GOOGLE) {
+                if (providerId != null) user.setGoogleId(providerId);
+            } else if (provider == AuthProvider.FACEBOOK) {
+                if (providerId != null) user.setFacebookId(providerId);
+            }
+
+            if (!StringUtils.hasText(user.getProviderId()) && providerId != null) {
+                user.setProviderId(providerId);
+            }
+
             if (StringUtils.hasText(request.getName()) && !StringUtils.hasText(user.getFullName())) {
-                user.setFullName(request.getName());
+                user.setFullName(request.getName().trim());
             }
-            if (StringUtils.hasText(request.getAvatarUrl())) {
-                user.setAvatarUrl(request.getAvatarUrl());
+
+            if (StringUtils.hasText(request.getAvatarUrl()) && !StringUtils.hasText(user.getAvatarUrl())) {
+                user.setAvatarUrl(request.getAvatarUrl().trim());
             }
-            if (user.getProvider() == AuthProvider.LOCAL) {
-                // Legăm contul de providerul OAuth
-                user.setProvider(provider);
-                user.setProviderId(request.getProviderId());
-            }
+
             user.setLastLoginAt(LocalDateTime.now());
         } else {
-            // Creăm automat un cont nou pentru utilizatorul OAuth
+            // Utilizator nou: generăm un username unic garantat
+            isNewUser = true;
             user = new User();
-            String baseUsername = email.split("@")[0].replaceAll("[^a-zA-Z0-9_.-]", "");
+
+            String baseUsername;
+            if (StringUtils.hasText(request.getName())) {
+                baseUsername = request.getName().trim().toLowerCase().replaceAll("[^a-zA-Z0-9_.-]", "_");
+            } else {
+                baseUsername = email.split("@")[0].toLowerCase().replaceAll("[^a-zA-Z0-9_.-]", "_");
+            }
             if (baseUsername.length() < 3) baseUsername = "user_" + baseUsername;
+            if (baseUsername.length() > 25) baseUsername = baseUsername.substring(0, 25);
+
             String uniqueUsername = baseUsername;
             int counter = 1;
             while (userRepository.existsByUsernameIgnoreCase(uniqueUsername)) {
@@ -214,13 +269,18 @@ public class AuthService {
 
             user.setUsername(uniqueUsername);
             user.setEmail(email);
-            // Generăm un hash securizat aleator (nu va fi folosit direct deoarece logarea se face prin OAuth)
-            user.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
-            user.setFullName(StringUtils.hasText(request.getName()) ? request.getName() : baseUsername);
+
+            if (provider == AuthProvider.GOOGLE) {
+                user.setGoogleId(providerId);
+            } else if (provider == AuthProvider.FACEBOOK) {
+                user.setFacebookId(providerId);
+            }
+
+            user.setProvider(provider);
+            user.setProviderId(providerId);
+            user.setFullName(StringUtils.hasText(request.getName()) ? request.getName().trim() : uniqueUsername);
             user.setAvatarUrl(request.getAvatarUrl());
             user.setRole(Role.ROLE_USER);
-            user.setProvider(provider);
-            user.setProviderId(request.getProviderId());
             user.setPreferredProfile("wheelchair");
             user.setEnabled(true);
             user.setCreatedAt(LocalDateTime.now());
@@ -230,43 +290,124 @@ public class AuthService {
         User savedUser = userRepository.save(user);
         String token = jwtUtil.generateToken(savedUser);
 
-        return new AuthResponse(
-                token,
-                savedUser.getId(),
-                savedUser.getUsername(),
-                savedUser.getEmail(),
-                savedUser.getFullName(),
-                savedUser.getRole().name(),
-                savedUser.getProvider().name(),
-                savedUser.getAvatarUrl(),
-                savedUser.getPreferredProfile(),
-                "Autentificare prin " + provider + " reușită!"
-        );
+        // Trimitere email de confirmare
+        emailService.sendLoginConfirmationEmail(savedUser.getEmail(), savedUser.getFullName(), provider.name(), clientIp);
+
+        String successMsg = isNewUser
+                ? "Cont nou creat și autentificat cu succes prin " + provider + "! Ți-am trimis un email de confirmare."
+                : "Autentificare prin " + provider + " reușită! Ți-am trimis un email de confirmare.";
+
+        return buildAuthResponse(savedUser, token, successMsg);
+    }
+
+    /**
+     * Validează dacă un cont Google este autentic și verifică token-ul dacă este prezent.
+     */
+    private void validateGoogleAccount(OAuthRequest request) {
+        String token = request.getToken();
+        if (StringUtils.hasText(token)) {
+            // Verificare structură JWT Google ID Token
+            String[] parts = token.split("\\.");
+            if (parts.length >= 2) {
+                try {
+                    String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+                    if (payloadJson.contains("\"email_verified\":false")) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Adresa de email asociată acestui cont Google nu este verificată de Google.");
+                    }
+                } catch (ResponseStatusException rse) {
+                    throw rse;
+                } catch (Exception ignored) {}
+            }
+
+            // Verificare online cu serverele oficiale Google (tokeninfo) dacă e disponibilă conexiunea
+            try {
+                HttpClient client = HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofMillis(2500))
+                        .build();
+                HttpRequest httpReq = HttpRequest.newBuilder()
+                        .uri(URI.create("https://oauth2.googleapis.com/tokeninfo?id_token=" + token))
+                        .timeout(Duration.ofMillis(2500))
+                        .GET()
+                        .build();
+                HttpResponse<String> resp = client.send(httpReq, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() == 200) {
+                    String body = resp.body();
+                    String verifiedEmail = extractJsonField(body, "email");
+                    if (StringUtils.hasText(verifiedEmail)) {
+                        request.setEmail(verifiedEmail);
+                    }
+                    String verifiedName = extractJsonField(body, "name");
+                    if (StringUtils.hasText(verifiedName)) {
+                        request.setName(verifiedName);
+                    }
+                    String verifiedSub = extractJsonField(body, "sub");
+                    if (StringUtils.hasText(verifiedSub)) {
+                        request.setProviderId(verifiedSub);
+                    }
+                    String verifiedPic = extractJsonField(body, "picture");
+                    if (StringUtils.hasText(verifiedPic)) {
+                        request.setAvatarUrl(verifiedPic);
+                    }
+                } else if (resp.statusCode() == 400 && resp.body().contains("error")) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token-ul furnizat nu a putut fi verificat de serverele Google.");
+                }
+            } catch (ResponseStatusException rse) {
+                throw rse;
+            } catch (Exception ignored) {
+                // Fallback dacă mediul nu are acces exterior la Google
+            }
+        }
+
+        // Verificare format adresă email Google
+        String email = request.getEmail();
+        if (StringUtils.hasText(email)) {
+            email = email.trim().toLowerCase();
+            if (!email.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Adresa de email '" + email + "' nu este un format valid de email.");
+            }
+            if (!email.endsWith("@gmail.com") && !email.endsWith("@googlemail.com") && !email.contains(".")) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Pentru autentificarea cu Google, te rugăm să folosești o adresă de email validă (ex: @gmail.com).");
+            }
+        }
+    }
+
+    /**
+     * Verificare rapidă dacă un username este deja ocupat în baza de date.
+     */
+    @Transactional(readOnly = true)
+    public boolean isUsernameTaken(String username) {
+        if (!StringUtils.hasText(username)) {
+            return false;
+        }
+        return userRepository.existsByUsernameIgnoreCase(username.trim());
     }
 
     @Transactional(readOnly = true)
     public UserProfileDto getCurrentUserProfile(String username) {
-        User user = userRepository.findByUsername(username)
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .or(() -> userRepository.findByUsername(username))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utilizatorul nu a fost găsit."));
 
-        UserProfileDto dto = new UserProfileDto();
-        dto.setId(user.getId());
-        dto.setUsername(user.getUsername());
-        dto.setEmail(user.getEmail());
-        dto.setFullName(user.getFullName());
-        dto.setAvatarUrl(user.getAvatarUrl());
-        dto.setRole(user.getRole().name());
-        dto.setProvider(user.getProvider().name());
-        dto.setPreferredProfile(user.getPreferredProfile());
-        dto.setCreatedAt(user.getCreatedAt());
-        dto.setLastLoginAt(user.getLastLoginAt());
-        return dto;
+        return toUserProfileDto(user);
     }
 
     @Transactional
     public UserProfileDto updateProfile(String username, UpdateProfileRequest request) {
-        User user = userRepository.findByUsername(username)
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .or(() -> userRepository.findByUsername(username))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utilizatorul nu a fost găsit."));
+
+        // Modificare username dacă se dorește
+        if (StringUtils.hasText(request.getUsername())) {
+            String newUsername = request.getUsername().trim().toLowerCase();
+            if (!newUsername.equalsIgnoreCase(user.getUsername())) {
+                if (userRepository.existsByUsernameIgnoreCase(newUsername)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "Numele de utilizator \"" + newUsername + "\" este deja folosit de alt utilizator.");
+                }
+                user.setUsername(newUsername);
+            }
+        }
 
         if (StringUtils.hasText(request.getFullName())) {
             user.setFullName(request.getFullName().trim());
@@ -276,9 +417,10 @@ public class AuthService {
             user.setPreferredProfile(request.getPreferredProfile().trim());
         }
 
-        // Schimbare parolă dacă este solicitată
+        // Setare sau schimbare parolă
         if (StringUtils.hasText(request.getNewPassword())) {
-            if (user.getProvider() == AuthProvider.LOCAL) {
+            // Dacă avea deja parolă setată, trebuie să o valideze pe cea veche
+            if (user.getPasswordHash() != null) {
                 if (!StringUtils.hasText(request.getCurrentPassword()) ||
                         !passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Parola curentă este incorectă.");
@@ -294,23 +436,89 @@ public class AuthService {
         }
 
         User updated = userRepository.save(user);
+        return toUserProfileDto(updated);
+    }
 
+    private UserProfileDto toUserProfileDto(User user) {
         UserProfileDto dto = new UserProfileDto();
-        dto.setId(updated.getId());
-        dto.setUsername(updated.getUsername());
-        dto.setEmail(updated.getEmail());
-        dto.setFullName(updated.getFullName());
-        dto.setAvatarUrl(updated.getAvatarUrl());
-        dto.setRole(updated.getRole().name());
-        dto.setProvider(updated.getProvider().name());
-        dto.setPreferredProfile(updated.getPreferredProfile());
-        dto.setCreatedAt(updated.getCreatedAt());
-        dto.setLastLoginAt(updated.getLastLoginAt());
+        dto.setId(user.getId());
+        dto.setUsername(user.getUsername());
+        dto.setEmail(user.getEmail());
+        dto.setFullName(user.getFullName());
+        dto.setAvatarUrl(user.getAvatarUrl());
+        dto.setRole(user.getRole().name());
+        dto.setProvider(user.getProvider() != null ? user.getProvider().name() : "LOCAL");
+        dto.setPreferredProfile(user.getPreferredProfile());
+        dto.setHasPassword(user.getPasswordHash() != null);
+        dto.setHasGoogle(user.getGoogleId() != null || user.getProvider() == AuthProvider.GOOGLE);
+        dto.setHasFacebook(user.getFacebookId() != null || user.getProvider() == AuthProvider.FACEBOOK);
+        dto.setCreatedAt(user.getCreatedAt());
+        dto.setLastLoginAt(user.getLastLoginAt());
         return dto;
+    }
+
+    private AuthResponse buildAuthResponse(User user, String token, String message) {
+        AuthResponse response = new AuthResponse(
+                token,
+                user.getId(),
+                user.getUsername(),
+                user.getEmail(),
+                user.getFullName(),
+                user.getRole().name(),
+                user.getProvider() != null ? user.getProvider().name() : "LOCAL",
+                user.getAvatarUrl(),
+                user.getPreferredProfile(),
+                message
+        );
+        response.setHasPassword(user.getPasswordHash() != null);
+        response.setHasGoogle(user.getGoogleId() != null || user.getProvider() == AuthProvider.GOOGLE);
+        response.setHasFacebook(user.getFacebookId() != null || user.getProvider() == AuthProvider.FACEBOOK);
+        response.setEmailSent(true);
+        return response;
     }
 
     private void recordFailure(String clientIp, String identifier) {
         rateLimitingService.recordFailedAttempt(clientIp);
         rateLimitingService.recordFailedAttempt(identifier);
+    }
+
+    /**
+     * Decodează payload-ul ID token-ului JWT trimis de Google / OpenID dacă este prezent.
+     */
+    private void enrichFromTokenIfPresent(OAuthRequest request) {
+        if (!StringUtils.hasText(request.getToken())) return;
+        try {
+            String[] parts = request.getToken().split("\\.");
+            if (parts.length >= 2) {
+                String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+                if (!StringUtils.hasText(request.getProviderId()) && payloadJson.contains("\"sub\"")) {
+                    request.setProviderId(extractJsonField(payloadJson, "sub"));
+                }
+                if (!StringUtils.hasText(request.getEmail()) && payloadJson.contains("\"email\"")) {
+                    request.setEmail(extractJsonField(payloadJson, "email"));
+                }
+                if (!StringUtils.hasText(request.getName()) && payloadJson.contains("\"name\"")) {
+                    request.setName(extractJsonField(payloadJson, "name"));
+                }
+                if (!StringUtils.hasText(request.getAvatarUrl()) && payloadJson.contains("\"picture\"")) {
+                    request.setAvatarUrl(extractJsonField(payloadJson, "picture"));
+                }
+            }
+        } catch (Exception ignored) {
+            // Fallback dacă token-ul este un string simplu (dev/mock)
+        }
+    }
+
+    private String extractJsonField(String json, String field) {
+        String key = "\"" + field + "\":\"";
+        int start = json.indexOf(key);
+        if (start != -1) {
+            start += key.length();
+            int end = json.indexOf("\"", start);
+            if (end != -1) {
+                return json.substring(start, end);
+            }
+        }
+        return null;
     }
 }

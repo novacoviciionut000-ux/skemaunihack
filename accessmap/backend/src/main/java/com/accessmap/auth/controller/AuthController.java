@@ -27,6 +27,40 @@ public class AuthController {
         this.authService = authService;
     }
 
+    @GetMapping("/check-username")
+    public ResponseEntity<Map<String, Object>> checkUsername(@RequestParam(value = "username", required = false) String username) {
+        Map<String, Object> result = new HashMap<>();
+        if (!org.springframework.util.StringUtils.hasText(username)) {
+            result.put("available", false);
+            result.put("username", "");
+            result.put("message", "Numele de utilizator este obligatoriu.");
+            return ResponseEntity.ok(result);
+        }
+
+        String clean = username.trim().toLowerCase();
+        if (clean.length() < 3 || clean.length() > 30) {
+            result.put("available", false);
+            result.put("username", clean);
+            result.put("message", "Numele de utilizator trebuie să aibă între 3 și 30 de caractere.");
+            return ResponseEntity.ok(result);
+        }
+
+        if (!clean.matches("^[a-zA-Z0-9_.-]+$")) {
+            result.put("available", false);
+            result.put("username", clean);
+            result.put("message", "Numele de utilizator poate conține doar litere, cifre, punct, linie și underscore.");
+            return ResponseEntity.ok(result);
+        }
+
+        boolean taken = authService.isUsernameTaken(clean);
+        result.put("available", !taken);
+        result.put("username", clean);
+        result.put("message", taken
+                ? "Numele de utilizator \"" + clean + "\" este deja folosit de altcineva."
+                : "Numele de utilizator \"" + clean + "\" este disponibil!");
+        return ResponseEntity.ok(result);
+    }
+
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         AuthResponse response = authService.register(request);
@@ -41,17 +75,20 @@ public class AuthController {
     }
 
     @PostMapping("/oauth")
-    public ResponseEntity<AuthResponse> oauthLogin(@Valid @RequestBody OAuthRequest request) {
-        AuthResponse response = authService.oauthLogin(request);
+    public ResponseEntity<AuthResponse> oauthLogin(@Valid @RequestBody OAuthRequest request, HttpServletRequest httpRequest) {
+        String clientIp = extractClientIp(httpRequest);
+        AuthResponse response = authService.oauthLogin(request, clientIp);
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/oauth/{provider}")
     public ResponseEntity<AuthResponse> oauthLoginWithProvider(
             @PathVariable String provider,
-            @RequestBody OAuthRequest request) {
+            @RequestBody OAuthRequest request,
+            HttpServletRequest httpRequest) {
         request.setProvider(provider);
-        AuthResponse response = authService.oauthLogin(request);
+        String clientIp = extractClientIp(httpRequest);
+        AuthResponse response = authService.oauthLogin(request, clientIp);
         return ResponseEntity.ok(response);
     }
 

@@ -37,6 +37,12 @@ public class User {
     @Column(name = "provider_id", length = 100)
     private String providerId;
 
+    @Column(name = "google_id", length = 100)
+    private String googleId;
+
+    @Column(name = "facebook_id", length = 100)
+    private String facebookId;
+
     @Column(name = "preferred_profile", length = 30)
     private String preferredProfile = "wheelchair";
 
@@ -104,6 +110,12 @@ public class User {
 
     public String getProviderId() { return providerId; }
     public void setProviderId(String providerId) { this.providerId = providerId; }
+
+    public String getGoogleId() { return googleId; }
+    public void setGoogleId(String googleId) { this.googleId = googleId; }
+
+    public String getFacebookId() { return facebookId; }
+    public void setFacebookId(String facebookId) { this.facebookId = facebookId; }
 
     public String getPreferredProfile() { return preferredProfile; }
     public void setPreferredProfile(String preferredProfile) { this.preferredProfile = preferredProfile; }

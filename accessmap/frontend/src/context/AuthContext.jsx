@@ -7,6 +7,7 @@ import {
     authLogin,
     authRegister,
     authOAuth,
+    authCheckUsername,
     authGetMe,
     authUpdateProfile
 } from '../api/client';
@@ -93,6 +94,7 @@ export const AuthProvider = ({ children }) => {
         loading,
         login,
         register,
+        checkUsername: authCheckUsername,
         loginWithOAuth,
         logout,
         updateProfile,

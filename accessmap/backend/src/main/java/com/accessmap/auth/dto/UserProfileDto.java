@@ -12,6 +12,9 @@ public class UserProfileDto {
     private String role;
     private String provider;
     private String preferredProfile;
+    private boolean hasPassword;
+    private boolean hasGoogle;
+    private boolean hasFacebook;
     private LocalDateTime createdAt;
     private LocalDateTime lastLoginAt;
 
@@ -40,6 +43,15 @@ public class UserProfileDto {
 
     public String getPreferredProfile() { return preferredProfile; }
     public void setPreferredProfile(String preferredProfile) { this.preferredProfile = preferredProfile; }
+
+    public boolean isHasPassword() { return hasPassword; }
+    public void setHasPassword(boolean hasPassword) { this.hasPassword = hasPassword; }
+
+    public boolean isHasGoogle() { return hasGoogle; }
+    public void setHasGoogle(boolean hasGoogle) { this.hasGoogle = hasGoogle; }
+
+    public boolean isHasFacebook() { return hasFacebook; }
+    public void setHasFacebook(boolean hasFacebook) { this.hasFacebook = hasFacebook; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

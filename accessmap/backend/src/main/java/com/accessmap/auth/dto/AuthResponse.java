@@ -12,6 +12,10 @@ public class AuthResponse {
     private String provider;
     private String avatarUrl;
     private String preferredProfile;
+    private boolean hasPassword;
+    private boolean hasGoogle;
+    private boolean hasFacebook;
+    private boolean emailSent = true;
     private String message;
 
     public AuthResponse() {}
@@ -59,6 +63,18 @@ public class AuthResponse {
 
     public String getPreferredProfile() { return preferredProfile; }
     public void setPreferredProfile(String preferredProfile) { this.preferredProfile = preferredProfile; }
+
+    public boolean isHasPassword() { return hasPassword; }
+    public void setHasPassword(boolean hasPassword) { this.hasPassword = hasPassword; }
+
+    public boolean isHasGoogle() { return hasGoogle; }
+    public void setHasGoogle(boolean hasGoogle) { this.hasGoogle = hasGoogle; }
+
+    public boolean isHasFacebook() { return hasFacebook; }
+    public void setHasFacebook(boolean hasFacebook) { this.hasFacebook = hasFacebook; }
+
+    public boolean isEmailSent() { return emailSent; }
+    public void setEmailSent(boolean emailSent) { this.emailSent = emailSent; }
 
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
