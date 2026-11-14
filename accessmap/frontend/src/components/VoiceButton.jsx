@@ -42,11 +42,92 @@ export default function VoiceButton({
   const [statusMessage, setStatusMessage] = useState('');
   const [statusType, setStatusType] = useState('info'); // 'info' | 'success' | 'error'
   const [alwaysOn, setAlwaysOn] = useState(false);
+  const [awaitingDest, setAwaitingDest] = useState(false);
   const { user } = useAuth();
+
+  // ── Confirmare vocală a destinației ─────────────────────────────────────
+  // After the place is found the app says where it is and how far, asks "Da sau Nu" and
+  // opens the microphone. The route only starts on "da". All state the callbacks read lives
+  // in refs, because the speech recognizer keeps the callbacks from when it was started.
+  const CONFIRM_TIMEOUT_MS = 90_000; // an unanswered question stops waiting after this
+  const MAX_CONFIRM_RETRIES = 2; // unclear answers re-asked this many times
+  const pendingPlaceRef = useRef(null); // { place, tries }
+  const pendingTimerRef = useRef(null);
+
+  const clearPendingPlace = () => {
+    pendingPlaceRef.current = null;
+    clearTimeout(pendingTimerRef.current);
+    setAwaitingDest(false);
+  };
+  useEffect(() => () => clearTimeout(pendingTimerRef.current), []);
+
+  // Opens the microphone for the answer. Always-on mode already has it open.
+  const listenForAnswer = () => {
+    const { alwaysOn: on, isListening: listening, startListening: start } = voiceStateRef.current;
+    if (on || listening) return;
+    playListenBeep();
+    if (navigator.vibrate) navigator.vibrate(40);
+    start();
+  };
+
+  const askToConfirm = (place) => {
+    pendingPlaceRef.current = { place, tries: 0 };
+    clearTimeout(pendingTimerRef.current);
+    pendingTimerRef.current = setTimeout(clearPendingPlace, CONFIRM_TIMEOUT_MS);
+    setAwaitingDest(true);
+    const dist = spokenDistance(place.distanceMeters);
+    speak(
+      `Am găsit ${place.shortName}${dist ? `, la aproximativ ${dist}` : ''}. Vrei să te duc acolo? Spune Da sau Nu.`,
+      { interrupt: true, onEnd: listenForAnswer }
+    );
+  };
+
+  const handleConfirmYes = () => {
+    const pending = pendingPlaceRef.current;
+    if (!pending) return;
+    const { place } = pending;
+    clearPendingPlace();
+    setStatusMessage(`Rută către ${place.shortName} (${formatDistance(place.distanceMeters)})`);
+    setStatusType('success');
+    speak(`Pornesc ruta către ${place.shortName}. Spune Anulează ruta pentru a opri.`, { interrupt: true });
+    if (onDestinationSet) {
+      onDestinationSet({ name: place.displayName, shortName: place.shortName, lat: place.lat, lng: place.lng });
+    }
+  };
+
+  // "Nu" alone drops the place; "nu, du-mă la Lidl" goes straight to the new search
+  const handleConfirmNo = (newDestination) => {
+    clearPendingPlace();
+    if (newDestination) {
+      handleDestinationRecognized(newDestination);
+      return;
+    }
+    setStatusMessage('Destinație respinsă. Spune unde vrei să mergi.');
+    setStatusType('info');
+    speak('Bine, nu pornesc ruta. Spune unde vrei să mergi.', { interrupt: true, onEnd: listenForAnswer });
+  };
+
+  const handleConfirmUnclear = () => {
+    const pending = pendingPlaceRef.current;
+    if (!pending) return;
+    pending.tries += 1;
+    if (pending.tries > MAX_CONFIRM_RETRIES) {
+      clearPendingPlace();
+      setStatusMessage('Fără răspuns clar. Ruta nu a fost pornită.');
+      setStatusType('error');
+      speak('Nu am primit un răspuns clar, așa că nu pornesc ruta. Spune din nou unde vrei să mergi.', { interrupt: true });
+      return;
+    }
+    speak(`Nu am înțeles. Vrei să te duc la ${pending.place.shortName}? Spune Da sau Nu.`, {
+      interrupt: true,
+      onEnd: listenForAnswer,
+    });
+  };
 
   // ── Destinație vocală: cea mai apropiată potrivire, ruta pornește imediat ──
   const lookupIdRef = useRef(0);
   const handleDestinationRecognized = async (destination) => {
+    clearPendingPlace(); // a new destination replaces any question still open
     // { query, near } from the voice parser; a plain string still works
     const dest = typeof destination === 'string' ? { query: destination, near: null } : destination;
     const spokenAddress = dest.near ? `${dest.query} de lângă ${dest.near}` : dest.query;
@@ -67,15 +148,9 @@ export default function VoiceButton({
         return;
       }
 
-      setStatusMessage(`Rută către ${place.shortName} (${formatDistance(place.distanceMeters)})`);
-      setStatusType('success');
-      speak(
-        `Pornesc ruta către ${place.shortName}, la ${spokenDistance(place.distanceMeters)}. Spune Anulează ruta pentru a opri.`,
-        { interrupt: true }
-      );
-      if (onDestinationSet) {
-        onDestinationSet({ name: place.displayName, shortName: place.shortName, lat: place.lat, lng: place.lng });
-      }
+      setStatusMessage(`${place.shortName} (${formatDistance(place.distanceMeters)}): spune Da sau Nu`);
+      setStatusType('info');
+      askToConfirm(place);
     } catch (err) {
       console.error('Place search error:', err);
       speak('Eroare de conexiune. Verifică internetul și încearcă din nou.', { interrupt: true });
@@ -136,11 +211,16 @@ export default function VoiceButton({
     },
     onCancelRoute: () => {
       lookupIdRef.current += 1; // drop a search still in flight
+      clearPendingPlace();
       setStatusMessage('Rută anulată');
       setStatusType('info');
       if (onCancelRoute) onCancelRoute();
     },
     onStatusQuery: handleStatusQuery,
+    awaitingConfirmation: awaitingDest,
+    onConfirmYes: handleConfirmYes,
+    onConfirmNo: handleConfirmNo,
+    onConfirmUnclear: handleConfirmUnclear,
     alwaysOn: false, // controlăm manual din UI
     isClient: Boolean(user && user.accountType !== 'VOLUNTEER'),
   });

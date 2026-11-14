@@ -18,6 +18,7 @@ export function useVoiceAssistant({
   awaitingConfirmation = false,
   onConfirmYes,
   onConfirmNo,
+  onConfirmUnclear,          // așteptăm „da”/„nu” dar s-a auzit altceva
   alwaysOn = false,          // dacă true, pornește microfonul automat și îl ține activ
   isClient = false,          // client logat: „ajutor” cheamă un voluntar în loc de 112
 }) {
@@ -123,6 +124,11 @@ export function useVoiceAssistant({
         if (onDestinationRecognized) onDestinationRecognized(cmd.destination);
         return;
       default:
+        // A yes/no question is open: ask it again instead of explaining the other commands
+        if (awaitingConfirmRef.current && onConfirmUnclear) {
+          onConfirmUnclear();
+          return;
+        }
         speak(
           list[0]
             ? `Am auzit: ${list[0]}. Nu am înțeles comanda. Spune, de exemplu: Du-mă la Kaufland.`
@@ -141,6 +147,7 @@ export function useVoiceAssistant({
     onDestinationRecognized,
     onConfirmYes,
     onConfirmNo,
+    onConfirmUnclear,
   ]);
 
   // ─── Pornire recognition ──────────────────────────────────────────────────

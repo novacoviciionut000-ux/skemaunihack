@@ -735,3 +735,15 @@ export const upvoteReport = async (id) => {
         return null;
     }
 };
+
+/**
+ * POST /api/reports/{id}/not-there: "the obstacle is gone".
+ * Resolves to { removed, notThereVotes }, or null if the request failed.
+ */
+export const reportNotThere = async (id) => {
+    try {
+        return await request(`/api/reports/${id}/not-there`, { method: 'POST' });
+    } catch {
+        return null;
+    }
+};

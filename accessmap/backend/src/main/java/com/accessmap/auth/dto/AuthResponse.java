@@ -95,6 +95,12 @@ public class AuthResponse {
     private int deedPoints;
     private int deedsCompleted;
 
+    /** True when this sign-in just created the account, so the client can ask which role to use. */
+    private boolean newUser;
+
+    public boolean isNewUser() { return newUser; }
+    public void setNewUser(boolean newUser) { this.newUser = newUser; }
+
     public String getAccountType() { return accountType; }
     public void setAccountType(String accountType) { this.accountType = accountType; }
     public int getDeedPoints() { return deedPoints; }

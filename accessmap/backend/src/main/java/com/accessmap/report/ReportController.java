@@ -4,6 +4,7 @@ import com.accessmap.auth.repository.UserRepository;
 import com.accessmap.common.ClientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -50,5 +51,12 @@ public class ReportController {
     @PostMapping("/{id}/upvote")
     public void upvote(@PathVariable Long id, HttpServletRequest request) {
         service.upvoteReport(id, ClientIp.resolve(request));
+    }
+
+    /** "The obstacle is not there anymore". Responds 404 for an unknown report. */
+    @PostMapping("/{id}/not-there")
+    public ResponseEntity<ReportService.NotThereResult> notThere(@PathVariable Long id, HttpServletRequest request) {
+        ReportService.NotThereResult result = service.markNotThere(id, ClientIp.resolve(request));
+        return result == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(result);
     }
 }

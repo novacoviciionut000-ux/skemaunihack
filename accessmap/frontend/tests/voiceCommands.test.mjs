@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
-await build({ entryPoints: [new URL('../src/utils/voiceCommands.js', import.meta.url).pathname], bundle: true, format: 'esm', outfile: new URL('./.voiceCommands.out.mjs', import.meta.url).pathname, logLevel: 'error' });
+import { fileURLToPath } from 'node:url';
+await build({ entryPoints: [fileURLToPath(new URL('../src/utils/voiceCommands.js', import.meta.url))], bundle: true, format: 'esm', outfile: fileURLToPath(new URL('./.voiceCommands.out.mjs', import.meta.url)), logLevel: 'error' });
 const { parseVoiceCommand, pickBestCommand } = await import('./.voiceCommands.out.mjs');
 const cases = [
   // [heard, expected type, expected query (destination), expected near]

@@ -333,7 +333,9 @@ public class AuthService {
                 ? "Cont nou creat și autentificat cu succes prin " + provider + "! Ți-am trimis un email de confirmare."
                 : "Autentificare prin " + provider + " reușită! Ți-am trimis un email de confirmare.";
 
-        return buildAuthResponse(savedUser, token, successMsg);
+        AuthResponse oauthResponse = buildAuthResponse(savedUser, token, successMsg);
+        oauthResponse.setNewUser(isNewUser);
+        return oauthResponse;
     }
 
     /**

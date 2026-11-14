@@ -25,7 +25,12 @@ import { authGetOAuthConfig } from '../api/client';
 const GOOGLE_BUTTON_GRACE_MS = 2500;
 
 export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAuthSuccess }) {
-  const { login, register, loginWithOAuth, checkUsername } = useAuth();
+  const { login, register, loginWithOAuth, checkUsername, updateProfile } = useAuth();
+
+  // Set right after a first-time Google sign-in: the new account's user, until they pick a role
+  const [roleChoice, setRoleChoice] = useState(null);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleError, setRoleError] = useState(null);
 
   const [mode, setMode] = useState(initialMode); // 'login' | 'register'
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
@@ -277,6 +282,13 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
         accountType,
       });
 
+      // A brand-new Google account has no role chosen yet: ask before closing the modal.
+      if (user.newUser) {
+        setSuccess(null);
+        setRoleChoice(user);
+        return;
+      }
+
       const deliveryNote = user.emailDeliveryMode === 'LIVE_SMTP'
         ? 'Livrat live prin Gmail SMTP'
         : 'Dispecerat securizat';
@@ -351,6 +363,12 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
               providerId: googleProfile.sub,
               accountType,
             });
+
+            if (user.newUser) {
+              setSuccess(null);
+              setRoleChoice(user);
+              return;
+            }
 
             setSuccess(`Conectat cu succes ca ${user.fullName || googleProfile.name}!`);
             setEmailSentInfo({
@@ -520,6 +538,27 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
     }
   };
 
+  // Saves the role picked after a first Google sign-in, then finishes the login.
+  const handleRoleChoice = async (type) => {
+    if (!roleChoice || roleSaving) return;
+    setRoleSaving(true);
+    setRoleError(null);
+    try {
+      let finalUser = roleChoice;
+      if (type !== roleChoice.accountType) {
+        const updated = await updateProfile({ accountType: type });
+        finalUser = { ...roleChoice, ...updated, accountType: type };
+      }
+      setRoleChoice(null);
+      if (onAuthSuccess) onAuthSuccess(finalUser);
+      onClose();
+    } catch (err) {
+      setRoleError(err.message || 'Nu am putut salva alegerea. Încearcă din nou.');
+    } finally {
+      setRoleSaving(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -539,6 +578,75 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onAu
         if (e.target === e.currentTarget) onClose();
       }}
     >
+      {/* Role picker after a first Google sign-in: blind / needs help, or volunteer. */}
+      {roleChoice && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10002,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="role-choice-title"
+            style={{
+              width: '100%',
+              maxWidth: 420,
+              background: '#ffffff',
+              borderRadius: 18,
+              padding: '22px 22px 18px',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
+              fontFamily: "'Inter', system-ui, sans-serif",
+            }}
+          >
+            <h3 id="role-choice-title" style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: '#0f172a' }}>
+              Cum vrei să folosești AccessMap?
+            </h3>
+            <p style={{ margin: '0 0 14px', fontSize: 13.5, color: '#475569', lineHeight: 1.5 }}>
+              Ești conectat ca {roleChoice.fullName || roleChoice.email}. Alege tipul de cont. Îl poți schimba mai târziu din profil.
+            </p>
+            {[
+              { id: 'CLIENT', title: 'Sunt nevăzător / am nevoie de ajutor', sub: 'Buton de ajutor care cheamă voluntari' },
+              { id: 'VOLUNTEER', title: 'Vreau să fiu voluntar', sub: 'Primești alerte și puncte de faptă bună' },
+            ].map((opt, i) => (
+              <button
+                key={opt.id}
+                type="button"
+                autoFocus={i === 0}
+                disabled={roleSaving}
+                onClick={() => handleRoleChoice(opt.id)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '14px 16px',
+                  marginBottom: 10,
+                  minHeight: 56,
+                  borderRadius: 14,
+                  border: '2px solid #2563eb',
+                  background: '#eff6ff',
+                  cursor: roleSaving ? 'wait' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>{opt.title}</div>
+                <div style={{ fontSize: 12.5, color: '#475569', marginTop: 2 }}>{opt.sub}</div>
+              </button>
+            ))}
+            {roleError && (
+              <p role="alert" style={{ margin: '4px 0 0', color: '#b91c1c', fontSize: 13 }}>{roleError}</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Error dialog. Shown on top of the form so a rejected password cannot be missed,
           and announced to screen readers through role="alertdialog". */}
       {errorPopup && (
