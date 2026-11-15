@@ -88,6 +88,14 @@ export function useVoiceAssistant({
         if (helpAwaiting) helpConfirmBridge.answer(false);
         else if (onConfirmNo) onConfirmNo(cmd.newDestination || null);
         return;
+      // Microphone (separate cases: they must never share a branch with the help commands)
+      case 'mic-always-on':
+        if (onMicAlwaysOn) onMicAlwaysOn();
+        return;
+      case 'mic-off':
+        if (onMicOff) onMicOff();
+        return;
+      // Help system: handled by HelpCenter
       case 'call-volunteer':
       case 'cancel-help':
       case 'help-status':
@@ -96,12 +104,6 @@ export function useVoiceAssistant({
       case 'release-help':
       case 'duty-on':
       case 'duty-off':
-      case 'mic-always-on':
-        if (onMicAlwaysOn) onMicAlwaysOn();
-        return;
-      case 'mic-off':
-        if (onMicOff) onMicOff();
-        return;
       case 'my-points':
         emitHelpCommand(cmd.type);
         return;
