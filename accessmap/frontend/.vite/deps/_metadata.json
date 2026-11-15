@@ -1,0 +1,71 @@
+{
+  "hash": "fdb1bde8",
+  "browserHash": "232db1bd",
+  "optimized": {
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "ff94f8a7",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "888cdd7d",
+      "needsInterop": true
+    },
+    "lucide-react": {
+      "src": "../../node_modules/lucide-react/dist/esm/lucide-react.js",
+      "file": "lucide-react.js",
+      "fileHash": "21d81866",
+      "needsInterop": false
+    },
+    "react-leaflet": {
+      "src": "../../node_modules/react-leaflet/lib/index.js",
+      "file": "react-leaflet.js",
+      "fileHash": "0e46b937",
+      "needsInterop": false
+    },
+    "leaflet": {
+      "src": "../../node_modules/leaflet/dist/leaflet-src.js",
+      "file": "leaflet.js",
+      "fileHash": "238c6e0a",
+      "needsInterop": true
+    },
+    "react-dom": {
+      "src": "../../node_modules/react-dom/index.js",
+      "file": "react-dom.js",
+      "fileHash": "e7ff7fca",
+      "needsInterop": true
+    },
+    "@tensorflow/tfjs": {
+      "src": "../../node_modules/@tensorflow/tfjs/dist/index.js",
+      "file": "@tensorflow_tfjs.js",
+      "fileHash": "526ebe9c",
+      "needsInterop": false
+    },
+    "@tensorflow-models/coco-ssd": {
+      "src": "../../node_modules/@tensorflow-models/coco-ssd/dist/coco-ssd.es2017.esm.min.js",
+      "file": "@tensorflow-models_coco-ssd.js",
+      "fileHash": "8c60ff8a",
+      "needsInterop": true
+    }
+  },
+  "chunks": {
+    "chunk-WD6HW2VM": {
+      "file": "chunk-WD6HW2VM.js"
+    },
+    "chunk-DEKZFPN3": {
+      "file": "chunk-DEKZFPN3.js"
+    },
+    "chunk-UMBEC6V5": {
+      "file": "chunk-UMBEC6V5.js"
+    },
+    "chunk-NUDKRYMD": {
+      "file": "chunk-NUDKRYMD.js"
+    },
+    "chunk-ROME4SDB": {
+      "file": "chunk-ROME4SDB.js"
+    }
+  }
+}
