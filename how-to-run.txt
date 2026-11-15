@@ -1,0 +1,106 @@
+AccessMap - Cum se ruleaza proiectul
+====================================
+
+Aplicatia reala se afla in accessmap/. Folderul backend/ din radacina repo-ului
+este un schelet gol si nu se foloseste.
+
+Servicii si porturi
+-------------------
+  Frontend (React + Vite)      http://localhost:3000
+  Backend  (Spring Boot)       http://localhost:8080
+  GraphHopper (rutare, Docker) http://localhost:8989
+
+1. Cerinte
+----------
+  - Java 17 sau 21 (JDK)
+  - Node.js 18+ si npm
+  - Docker + Docker Compose (doar pentru GraphHopper; se poate sari peste)
+  - Acces la o baza de date PostgreSQL/PostGIS (in proiect se foloseste Supabase)
+
+2. Configurare (.env)
+---------------------
+Din radacina repo-ului:
+
+  cp .env.example accessmap/.env
+
+Apoi completeaza in accessmap/.env (fisierul este in .gitignore, nu-l pune in git):
+
+  Obligatorii:
+    DB_URL, DB_USERNAME, DB_PASSWORD   conexiune Postgres (Supabase, pooler port 6543)
+    GOOGLE_MAPS_API_KEY
+    JWT_SECRET                         minim 32 caractere, ex: openssl rand -base64 48
+
+  Pentru login Google:
+    GOOGLE_CLIENT_ID, VITE_GOOGLE_CLIENT_ID
+    In Google Cloud Console, la "Authorized JavaScript origins" adauga
+    http://localhost:3000 si http://localhost:8080
+    (si URL-ul trycloudflare.com daca testezi de pe telefon)
+
+  Pentru emailul de confirmare:
+    SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM, MAIL_ENABLED
+    Pentru Gmail ai nevoie de o "parola pentru aplicatii" (cu verificarea in 2 pasi activa).
+
+3. Pornire rapida (Linux / macOS)
+---------------------------------
+Din radacina repo-ului:
+
+  ./start.sh
+
+Scriptul verifica Java/Node/Maven, ruleaza "npm install" la prima pornire,
+porneste GraphHopper in Docker, apoi backendul si frontendul, si deschide browserul.
+
+Optiuni:
+  ./start.sh --no-docker   porneste doar backend + frontend (fara GraphHopper)
+  ./start.sh --no-wait     nu asteapta ca GraphHopper sa termine indexarea
+  ./start.sh --status      arata ce ruleaza pe porturile 8989, 8080, 3000
+  ./start.sh --logs        urmareste logurile backend + frontend
+  ./start.sh --stop        opreste toate serviciile
+
+Loguri: accessmap/logs/backend.log si accessmap/logs/frontend.log
+
+Nota: la prima pornire GraphHopper descarca harta Romaniei si construieste
+graful de rutare. Dureaza aproximativ 10-20 de minute.
+
+4. Pornire pe Windows
+---------------------
+  start.bat             porneste tot (ruleaza accessmap\start.ps1)
+  start-backend.bat     doar backendul (:8080)
+  start-frontend.bat    doar frontendul (:3000)
+
+5. Pornire manuala (daca scripturile nu merg)
+---------------------------------------------
+Terminal 1 - GraphHopper (optional):
+  cd accessmap
+  docker compose up -d graphhopper
+
+Terminal 2 - Backend:
+  cd accessmap/backend
+  ./mvnw spring-boot:run
+
+Terminal 3 - Frontend:
+  cd accessmap/frontend
+  npm install
+  npm run dev
+
+Apoi deschide http://localhost:3000
+
+6. Testare pe telefon (optional)
+--------------------------------
+Camera si vocea cer HTTPS pe telefon. Foloseste tunelul Cloudflare inclus:
+
+  ./cloudflared tunnel --url http://localhost:3000
+
+Copiaza URL-ul https://xxx.trycloudflare.com afisat si adauga-l in
+"Authorized JavaScript origins" din Google Cloud Console.
+
+7. Probleme frecvente
+---------------------
+  - "Java not found": instaleaza JDK 17 (sudo apt install openjdk-17-jdk)
+    sau seteaza JAVA_HOME.
+  - Port 8080 sau 3000 ocupat: opreste procesul care il foloseste sau ruleaza
+    ./start.sh --stop. Scriptul considera serviciul deja pornit.
+  - Docker nu ruleaza: sudo systemctl start docker, sau foloseste --no-docker.
+    Fara GraphHopper, backendul foloseste OSRM ca rezerva pentru rutare.
+  - Backendul nu porneste: verifica accessmap/logs/backend.log. De obicei lipsesc
+    sau sunt gresite valorile DB_* sau JWT_SECRET din .env.
+  - Erori esbuild pe Linux: ruleaza "npm rebuild esbuild" in accessmap/frontend.
