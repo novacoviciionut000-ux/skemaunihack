@@ -1,5 +1,5 @@
 Vizn
-Aplicație web de navigare pietonală pentru persoane cu dizabilități (nevăzători/slab-văzători, utilizatori de scaun cu rotile, mobilitate limitată), construită la hackathon-ul UniHack (Timișoara).
+aplicație web de navigare pietonală pentru persoane cu dizabilități (nevăzători/slab-văzători, utilizatori de scaun cu rotile, mobilitate limitată), construită la hackathon-ul UniHack (Timișoara).
 
 Ce face
 - Rutare pietonală accesibilă — evită obstacole raportate de comunitate (trotuare blocate, lifturi stricate etc.), cu profiluri dedicate (wheelchair, low_vision, limited_mobility).
